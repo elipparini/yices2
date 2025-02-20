@@ -1078,6 +1078,44 @@ void nra_plugin_propagate(plugin_t* plugin, trail_token_t* prop) {
   assert(nra_plugin_check_assignment(nra));
 }
 
+#include <math.h>
+
+double nra_plugin_get_cache_quality(plugin_t *plugin) {
+  nra_plugin_t* nra = (nra_plugin_t*) plugin;
+
+  uint32_t cnt_all = 0, cnt_feasible = 0, cnt_existing = 0;
+  const mcsat_trail_t *trail = nra->ctx->trail;
+  const variable_db_t *var_db = nra->ctx->var_db;
+  for (variable_t v = 1; v < trail->model.size; ++v) {
+    if (!good_term(nra->ctx->terms, variable_db_get_term(var_db, v))) {
+      continue;
+    }
+    if (!variable_db_is_int(var_db, v) && !variable_db_is_real(var_db, v)) {
+      continue;
+    }
+    ++cnt_all;
+    if (!trail_has_cached_value(trail, v)) {
+      continue;
+    }
+    ++cnt_existing;
+    const lp_feasibility_set_t *fs = feasible_set_db_get(nra->feasible_set_db, v);
+    const mcsat_value_t *cache_value = trail_get_cached_value(nra->ctx->trail, v);
+    bool ok = fs == NULL || lp_feasibility_set_contains(fs, &cache_value->lp_value);
+    if (ok) {
+      ++cnt_feasible;
+    }
+  }
+  double percent_feasible = ((double)cnt_feasible) / cnt_all;
+  double percent_existing = ((double)cnt_existing) / cnt_all;
+
+  if (trace_enabled(nra->ctx->tracer, "nra::cache-stats")) {
+    fprintf(stderr, "existing: %d/%d (%3.0f)\n", cnt_existing, cnt_all, round(percent_existing * 100));
+    fprintf(stderr, "feasible: %d/%d (%3.0f)\n", cnt_feasible, cnt_all, round(percent_feasible * 100));
+  }
+
+  return percent_feasible;
+}
+
 static
 void nra_plugin_decide(plugin_t* plugin, variable_t x, trail_token_t* decide_token, bool must) {
   nra_plugin_t* nra = (nra_plugin_t*) plugin;

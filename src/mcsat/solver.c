@@ -63,6 +63,12 @@
 
 #include <math.h>
 
+// TEMP STUFF
+
+extern double nra_plugin_get_cache_quality(plugin_t *plugin);
+
+// END TEMP STUFF
+
 /**
  * Notification of new variables for the main solver.
  */
@@ -291,6 +297,12 @@ struct mcsat_solver_s {
     statistic_int_t* gc_calls;
     // Recache calls
     statistic_int_t* recaches;
+    // NRA cache quality before l2o
+    statistic_avg_t* cache_quality_before;
+    // NRA cache quality before l2o
+    statistic_avg_t* cache_quality_after;
+
+
   } solver_stats;
 
   struct {
@@ -340,6 +352,8 @@ void mcsat_stats_init(mcsat_solver_t* mcsat) {
   mcsat->solver_stats.lemmas = statistics_new_int(&mcsat->stats, "mcsat::lemmas");
   mcsat->solver_stats.restarts = statistics_new_int(&mcsat->stats, "mcsat::restarts");
   mcsat->solver_stats.recaches = statistics_new_int(&mcsat->stats, "mcsat::recaches");
+  mcsat->solver_stats.cache_quality_before = statistics_new_avg(&mcsat->stats, "NRA::cache_quality_before");
+  mcsat->solver_stats.cache_quality_after = statistics_new_avg(&mcsat->stats, "NRA::cache_quality_after");
 }
 
 static
@@ -1480,10 +1494,14 @@ void mcsat_process_requests(mcsat_solver_t* mcsat) {
 
     // recache
     if (mcsat->pending_requests_all.recache) {
+      double before = nra_plugin_get_cache_quality(mcsat->plugins[mcsat->nra_plugin_id].plugin);
       l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 2, NULL);
+      double after = nra_plugin_get_cache_quality(mcsat->plugins[mcsat->nra_plugin_id].plugin);
       (*mcsat->solver_stats.recaches) ++;
       // trail_model_cache_clear(mcsat->trail);
       mcsat->pending_requests_all.recache = false;
+      statistic_avg_add(mcsat->solver_stats.cache_quality_before, (int)(before * 100));
+      statistic_avg_add(mcsat->solver_stats.cache_quality_after, (int)(after * 100));
     }
 
     // All services
