@@ -81,12 +81,7 @@ uint32_t next_var(var_order_t *o) {
   return o->pos;
 }
 
-/**
- * Performs hill climbing to minimize term t with variables v (where v_fixed are fixed variables) and starting value x.
- * Array of booleans v_fixed such that, if v_fixed[i] == true, then the value of v[i] must not be changed.
- * Array of doubles x are the current best and is updated to the new best.
- */
-void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
+term_t hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   assert(state->n_var >= 1);
   assert(state->n_var_fixed <= state->n_var);
 
@@ -94,7 +89,7 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
     if (trace_enabled(l2o->tracer, "mcsat::hill_climbing")) {
       printf("\n\n all variables are fixed");
     }
-    return;
+    return NULL_TERM;
   }
 
   uint32_t i = 0;
@@ -137,6 +132,11 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   }
 
   uint32_t current_dir_index = state->n_var_fixed + next_var(&order);
+  uint32_t steps[n_var];
+
+  for (i = 0; i < n_var; ++i) {
+    steps[i] = 0;
+  }
 
   // main loop
   while (best_cost > acceptance_threshold
@@ -190,7 +190,7 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
       assert(val_old[current_dir_index] == val_cur[current_dir_index]);
       double best_x_i = val_old[current_dir_index];
       for (int candidate_index = 0; candidate_index < 4; ++candidate_index) {
-        // Try to increment x[current_dir_index] by step_size  
+        // Try to increment x[current_dir_index] by step_size
         double step = step_size[current_dir_index] * candidate[candidate_index];
         val_cur[current_dir_index] = val_old[current_dir_index] + step;
 
@@ -230,7 +230,7 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
         }
         val_cur[current_dir_index] = best_x_i;   // keep best x found
         val_old[current_dir_index] = best_x_i;   // update x
-        step_size[current_dir_index] = best_step;   // keep successful acceleration   
+        step_size[current_dir_index] = best_step;   // keep successful acceleration
       }
     }
     if (!has_improved) {    // Go to next var
@@ -240,6 +240,7 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
       if (trace_enabled(l2o->tracer, "mcsat::hill_climbing")) {
         printf("\n\n has_improved: %d", has_improved);
       }
+      steps[current_dir_index]++;
       var_prio(&order, current_dir_index - state->n_var_fixed);
       n_var_visited = 0;
     }
@@ -247,6 +248,15 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
 
   if (trace_enabled(l2o->tracer, "mcsat::hill_climbing")) {
     printf("\n\n final_cost: %.50f", best_cost);
+  }
+
+  // hint the best variable
+  int32_t best_index = -1;
+  for (i = 0; i < n_var; ++i) {
+    assert(i >= state->n_var_fixed || steps[i] == 0);
+    if (steps[i] > steps[best_index]) {
+      best_index = i;
+    }
   }
 
 #ifndef NDEBUG
@@ -261,4 +271,6 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   free(val_old);
   free(step_size);
   delete_var_order(&order);
+
+  return best_index == -1 ? NULL_TERM : state->var[best_index];
 }

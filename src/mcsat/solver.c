@@ -1480,7 +1480,10 @@ void mcsat_process_requests(mcsat_solver_t* mcsat) {
 
     // recache
     if (mcsat->pending_requests_all.recache) {
-      l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 2, NULL);
+      term_t best = l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 2, NULL);
+      if (best != NULL_TERM && variable_db_has_variable(mcsat->var_db, best)) {
+        mcsat_add_decision_hint(mcsat, variable_db_get_variable_if_exists(mcsat->var_db, best));
+      }
       (*mcsat->solver_stats.recaches) ++;
       // trail_model_cache_clear(mcsat->trail);
       mcsat->pending_requests_all.recache = false;

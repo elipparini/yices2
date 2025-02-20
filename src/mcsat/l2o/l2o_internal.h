@@ -58,7 +58,8 @@ double l2o_evaluate_term_approx(l2o_t *l2o, term_t term, const l2o_search_state_
 
 /**
  * Hill climbing algorithm with cost function t (to be minimized), variables v (some of which have fixed values), and starting point x
+ * Returns the index of the variable in state that made the best improvement.
  */
-void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state);
+term_t hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state);
 
 #endif /* MCSAT_L2O_INTERNAL_H_ */
