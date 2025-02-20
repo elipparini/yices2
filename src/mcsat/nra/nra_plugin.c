@@ -1093,6 +1093,9 @@ double nra_plugin_get_cache_quality(plugin_t *plugin) {
     if (!variable_db_is_int(var_db, v) && !variable_db_is_real(var_db, v)) {
       continue;
     }
+    if (trail_has_value(nra->ctx->trail, v)) {
+      continue;
+    }
     ++cnt_all;
     if (!trail_has_cached_value(trail, v)) {
       continue;
