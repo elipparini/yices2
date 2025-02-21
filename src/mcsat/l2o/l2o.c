@@ -1371,7 +1371,7 @@ void l2o_set_hint(l2o_t *l2o, mcsat_trail_t *trail, const l2o_search_state_t *st
 
 /** Minimize L2O cost function and set hint to trail */
 static
-term_t l2o_minimize_and_set_hint(l2o_t *l2o, term_t t, mcsat_trail_t *trail, bool use_cached_values, const var_queue_t *queue) {
+void l2o_minimize_and_set_hint(l2o_t *l2o, term_t t, mcsat_trail_t *trail, bool use_cached_values, const var_queue_t *queue, ivector_t *hints) {
   if (trace_enabled(l2o->tracer, "mcsat::l2o")) {
     printf("\n\n  init l2o_minimize_and_set_hint\n");
   }
@@ -1380,24 +1380,23 @@ term_t l2o_minimize_and_set_hint(l2o_t *l2o, term_t t, mcsat_trail_t *trail, boo
     if (trace_enabled(l2o->tracer, "mcsat::l2o")) {
       mcsat_trace_printf(l2o->tracer, "\nt is RESERVED_TERM\n");
     }
-    return NULL_TERM;
+    return;
   }
 
   // ensure that the term has freevares are collected
   collect_freevars(l2o, t);
   if(!l2o_is_valid_term(l2o, t)) {
-    return NULL_TERM;
+    return;
   }
 
   l2o_search_state_t state;
-  term_t best = NULL_TERM;
 
   // create search state
   l2o_search_state_create(l2o, t, trail, use_cached_values, queue, &state);
 
   if (!l2o_search_state_is_empty(&state)) {
     // Improve val using hill_climbing
-    best = hill_climbing(l2o, t, &state);
+    hill_climbing(l2o, t, &state, hints);
 
     // Set hints
     l2o_set_hint(l2o, trail, &state);
@@ -1405,8 +1404,6 @@ term_t l2o_minimize_and_set_hint(l2o_t *l2o, term_t t, mcsat_trail_t *trail, boo
 
   // destroy state
   l2o_search_state_destruct(&state);
-
-  return best;
 }
 
 term_t l2o_make_cost_fx(l2o_t* l2o) {
@@ -1422,7 +1419,7 @@ term_t l2o_make_cost_fx(l2o_t* l2o) {
   return l2o->cost_fx;
 }
 
-term_t l2o_run(l2o_t* l2o, mcsat_trail_t* trail, bool use_cached_values, const var_queue_t *queue) {
+void l2o_run(l2o_t* l2o, mcsat_trail_t* trail, bool use_cached_values, const var_queue_t *queue, ivector_t *hints) {
   term_t cost_fx = l2o_make_cost_fx(l2o);
 
   if (trace_enabled(l2o->tracer, "mcsat::l2o")){
@@ -1434,5 +1431,5 @@ term_t l2o_run(l2o_t* l2o, mcsat_trail_t* trail, bool use_cached_values, const v
 
   // TODO: Check if cost is zero
   l2o->n_runs++;
-  return l2o_minimize_and_set_hint(l2o, cost_fx, trail, use_cached_values, queue);
+  l2o_minimize_and_set_hint(l2o, cost_fx, trail, use_cached_values, queue, hints);
 }

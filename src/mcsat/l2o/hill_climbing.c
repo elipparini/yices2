@@ -21,6 +21,7 @@
 #include "mcsat/l2o/l2o.h"
 #include "mcsat/l2o/l2o_internal.h"
 #include "mcsat/tracing.h"
+#include "utils/int_array_sort2.h"
 
 #define IMPROVEMENT_THRESHOLD 0.0
 
@@ -81,7 +82,13 @@ uint32_t next_var(var_order_t *o) {
   return o->pos;
 }
 
-term_t hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
+static
+bool cmp_steps(void *data, int32_t x, int32_t y) {
+  uint32_t *steps = data;
+  return steps[x] > steps[y];
+}
+
+void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state, ivector_t *hints) {
   assert(state->n_var >= 1);
   assert(state->n_var_fixed <= state->n_var);
 
@@ -89,7 +96,7 @@ term_t hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
     if (trace_enabled(l2o->tracer, "mcsat::hill_climbing")) {
       printf("\n\n all variables are fixed");
     }
-    return NULL_TERM;
+    return;
   }
 
   uint32_t i = 0;
@@ -251,12 +258,18 @@ term_t hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   }
 
   // hint the best variable
-  int32_t best_index = -1;
+  int32_t idx[n_var];
   for (i = 0; i < n_var; ++i) {
-    assert(i >= state->n_var_fixed || steps[i] == 0);
-    if (steps[i] > steps[best_index]) {
-      best_index = i;
+    idx[i] = i;
+  }
+  int_array_sort2(idx, n_var, steps, cmp_steps);
+  for (i = 0; i < n_var; ++i) {
+    assert(i == 0 || steps[idx[i-1]] >= steps[idx[i]]);
+    if (steps[idx[i]] == 0) {
+      break;
     }
+    assert(idx[i] >= state->n_var_fixed);
+    ivector_push(hints, state->var[idx[i]]);
   }
 
 #ifndef NDEBUG
@@ -265,12 +278,11 @@ term_t hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   }
   for (int j = 0; j < state->n_var_fixed; ++j) {
     assert(step_size[j] == 1.0);
+    assert(steps[j] == 0);
   }
 #endif
 
   free(val_old);
   free(step_size);
   delete_var_order(&order);
-
-  return best_index == -1 ? NULL_TERM : state->var[best_index];
 }

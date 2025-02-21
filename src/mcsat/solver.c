@@ -291,6 +291,8 @@ struct mcsat_solver_s {
     statistic_int_t* gc_calls;
     // Recache calls
     statistic_int_t* recaches;
+    // Hints supplied by l2o
+    statistic_int_t* recaches_hints;
   } solver_stats;
 
   struct {
@@ -340,6 +342,7 @@ void mcsat_stats_init(mcsat_solver_t* mcsat) {
   mcsat->solver_stats.lemmas = statistics_new_int(&mcsat->stats, "mcsat::lemmas");
   mcsat->solver_stats.restarts = statistics_new_int(&mcsat->stats, "mcsat::restarts");
   mcsat->solver_stats.recaches = statistics_new_int(&mcsat->stats, "mcsat::recaches");
+  mcsat->solver_stats.recaches_hints = statistics_new_int(&mcsat->stats, "mcsat::recaches_hints");
 }
 
 static
@@ -1480,13 +1483,21 @@ void mcsat_process_requests(mcsat_solver_t* mcsat) {
 
     // recache
     if (mcsat->pending_requests_all.recache) {
-      term_t best = l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 2, NULL);
-      if (best != NULL_TERM && variable_db_has_variable(mcsat->var_db, best)) {
-        mcsat_add_decision_hint(mcsat, variable_db_get_variable_if_exists(mcsat->var_db, best));
+      ivector_t hints;
+      init_ivector(&hints, 0);
+      l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 2, NULL, &hints);
+      for (int i = 0; i < 5; ++i) {
+        if (i >= hints.size) break;
+        term_t t = hints.data[i];
+        if (variable_db_has_variable(mcsat->var_db, t)) {
+          mcsat_add_decision_hint(mcsat, variable_db_get_variable_if_exists(mcsat->var_db, t));
+          (*mcsat->solver_stats.recaches_hints) ++;
+        }
       }
       (*mcsat->solver_stats.recaches) ++;
       // trail_model_cache_clear(mcsat->trail);
       mcsat->pending_requests_all.recache = false;
+      delete_ivector(&hints);
     }
 
     // All services
