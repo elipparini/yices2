@@ -192,7 +192,6 @@ double l2o_evaluate_term_approx(l2o_t *l2o, term_t term, const l2o_search_state_
 
     if (use_cached_value) {
       current_eval = evaluator_get_cache(l2o, current);
-      assert(current_eval < INFINITY);
       if (trace_enabled(l2o->tracer, "mcsat::evaluator")) {
         printf("\nusing cached value: %f", current_eval);
       }
