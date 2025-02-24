@@ -220,11 +220,14 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   return success;
 }
 
+typedef enum {
+  OPT_BOOLEAN = 0x01,
+  OPT_FS_JUMP = 0x02,
+  OPT_HILL_CLIMB = 0x4,
+} opt_mode_t;
 
-#define MAX_ITER  1000
-#define MAX_CALLS (MAX_ITER * 4)
-
-void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
+static
+void optimize(l2o_t *l2o, term_t t, l2o_search_state_t *state, opt_mode_t mode, uint32_t *max_iter, uint32_t *max_calls) {
   assert(state->n_var >= 1);
   assert(state->n_var_fixed <= state->n_var);
 
@@ -232,14 +235,14 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
     return;
   }
 
+  if (*max_iter == 0 || *max_calls == 0) {
+    return;
+  }
+
   const term_table_t *terms = l2o->terms;
   const uint32_t n_var = state->n_var;
   const uint32_t n_var_flex = state->n_var - state->n_var_fixed;
   const term_t *const var = state->var;
-
-  uint32_t n_iter = 0;         // number of iteration
-  uint32_t n_calls = 0;        // Counter for calls to evaluator
-  uint32_t n_var_visited = 0;  // Number of variables visited in an iteration
 
   var_order_t order;
   init_var_order(&order, n_var_flex);
@@ -256,27 +259,34 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   update_cache(l2o);
 
   uint32_t var_idx = state->n_var_fixed + next_var(&order);
+  uint32_t n_var_visited = 0;  // Number of variables visited in an iteration
 
   // main loop
   while (best_cost > 0.0
          && n_var_visited <= n_var_flex
-         && n_iter < MAX_ITER
-         && n_calls < MAX_CALLS
+         && *max_iter > 0
+         && *max_calls > 0
   ) {
     assert(var_idx >= state->n_var_fixed);
-    n_iter++;
+    uint32_t n_calls = 0;        // Counter for calls to evaluator
 
-    bool has_improved;
+    bool has_improved = false;
     if (is_boolean_term(terms, var[var_idx])) {
-      has_improved = optimize_bool(l2o, t, state, var_idx, &best_cost, &n_calls);
+      if (mode & OPT_BOOLEAN) {
+        has_improved = optimize_bool(l2o, t, state, var_idx, &best_cost, &n_calls);
+      }
     } else {
-      has_improved = optimize_fs(l2o, t, state, var_idx, &best_cost, &n_calls);
+      if (mode & OPT_FS_JUMP) {
+        has_improved = optimize_fs(l2o, t, state, var_idx, &best_cost, &n_calls);
+      }
       // TODO get feasible cell boundary and use it for optimize_number
-      bool has_improved_hc;
-      do {
-        has_improved_hc = optimize_number(l2o, t, state, var_idx, &step_size[var_idx], &best_cost, &n_calls);
-        has_improved = has_improved || has_improved_hc;
-      } while(has_improved_hc && n_calls < MAX_CALLS);
+      if (mode & OPT_HILL_CLIMB) {
+        bool has_improved_hc;
+        do {
+          has_improved_hc = optimize_number(l2o, t, state, var_idx, &step_size[var_idx], &best_cost, &n_calls);
+          has_improved = has_improved || has_improved_hc;
+        } while (has_improved_hc && *max_calls > n_calls);
+      }
     }
 
     if (!has_improved) {    // Go to next var
@@ -286,9 +296,12 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
       var_prio(&order, var_idx - state->n_var_fixed);
       n_var_visited = 0;
     }
+
+    (*l2o->l2o_stats.n_eval_runs) += n_calls;
+    (*max_calls) = n_calls > *max_calls ? 0 : *max_calls - n_calls;
+    (*max_iter) -= n_calls > 0 ? 1 : 0;
   }
 
-  (*l2o->l2o_stats.n_eval_runs) += n_calls;
 
 #ifndef NDEBUG
   for (int j = 0; j < state->n_var_fixed; ++j) {
@@ -297,4 +310,18 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
 #endif
 
   delete_var_order(&order);
+}
+
+#define MAX_ITER  1000
+#define MAX_CALLS (MAX_ITER * 4)
+
+void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
+  uint32_t budget_iter = MAX_ITER, budget_calls = MAX_CALLS;
+#if 0
+  optimize(l2o, t, state, OPT_BOOLEAN | OPT_FS_JUMP | OPT_HILL_CLIMB, &budget_iter, &budget_calls);
+#else
+  optimize(l2o, t, state, OPT_BOOLEAN, &budget_iter, &budget_calls);
+  optimize(l2o, t, state, OPT_FS_JUMP, &budget_iter, &budget_calls);
+  optimize(l2o, t, state, OPT_HILL_CLIMB, &budget_iter, &budget_calls);
+#endif
 }
