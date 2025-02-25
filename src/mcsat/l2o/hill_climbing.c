@@ -223,6 +223,8 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   return success;
 }
 
+#define EPSILON 1e-5
+
 void get_fs_approximation(l2o_t *l2o, term_t var, double *min, double *max) {
   const lp_feasibility_set_t *fs = get_fs_by_term(l2o->nra, var);
   if (fs == NULL) {
@@ -235,6 +237,12 @@ void get_fs_approximation(l2o_t *l2o, term_t var, double *min, double *max) {
     *min = lp_value_to_double(&i.a);
     if (lp_interval_is_point(&i)) *max = *min;
     else *max = lp_value_to_double(&i.b);
+
+    if (*max - *min > 2 * EPSILON) {
+      *max -= EPSILON;
+      *min += EPSILON;
+    }
+
     lp_interval_destruct(&i);
   }
 }
