@@ -127,7 +127,7 @@ bool optimize_bool(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, 
 #define CANDIDATES 4
 
 static
-bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, double *step_size, double *best, uint32_t *eval_runs) {
+bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, double min, double max, double *step_size, double *best, uint32_t *eval_runs) {
   term_t t_var = state->var[v];
   double *const val = &state->val[v];
   const double old_val = state->val[v];
@@ -149,6 +149,9 @@ bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v
   for (int i = 0; i < CANDIDATES; ++i) {
     double step = old_step * candidate[i];
     *val = old_val + step;
+
+    if (*val < min) *val = min;
+    if (*val > max) *val = max;
 
     // If integer type, round to int
     if (is_integer_term(l2o->terms, t_var)) {
@@ -220,6 +223,21 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   return success;
 }
 
+void get_fs_approximation(l2o_t *l2o, term_t var, double *min, double *max) {
+  const lp_feasibility_set_t *fs = get_fs_by_term(l2o->nra, var);
+  if (fs == NULL) {
+    *min = -INFINITY;
+    *max = INFINITY;
+  } else {
+    lp_interval_t i;
+    lp_interval_construct_full(&i);
+    lp_feasibility_set_to_interval(fs, &i);
+    *min = lp_value_to_double(&i.a);
+    if (lp_interval_is_point(&i)) *max = *min;
+    else *max = lp_value_to_double(&i.b);
+    lp_interval_destruct(&i);
+  }
+}
 
 #define MAX_ITER  1000
 #define MAX_CALLS (MAX_ITER * 4)
@@ -248,6 +266,10 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   for (uint32_t i = 0; i < n_var; ++i) {
     step_size[i] = 1.0;
   }
+  double min[n_var], max[n_var];
+  for (uint32_t i = 0; i < n_var; ++i) {
+    get_fs_approximation(l2o, var[i], &min[i], &max[i]);
+  }
 
   // Reset evaluator cache cost (this forces the update of the cache at the next call)
   double best_cost = l2o_evaluate_term_approx(l2o, t, state);
@@ -266,15 +288,14 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
     assert(var_idx >= state->n_var_fixed);
     n_iter++;
 
-    bool has_improved;
+    bool has_improved = false;
     if (is_boolean_term(terms, var[var_idx])) {
       has_improved = optimize_bool(l2o, t, state, var_idx, &best_cost, &n_calls);
     } else {
-      has_improved = optimize_fs(l2o, t, state, var_idx, &best_cost, &n_calls);
-      // TODO get feasible cell boundary and use it for optimize_number
+      //has_improved = optimize_fs(l2o, t, state, var_idx, &best_cost, &n_calls);
       bool has_improved_hc;
       do {
-        has_improved_hc = optimize_number(l2o, t, state, var_idx, &step_size[var_idx], &best_cost, &n_calls);
+        has_improved_hc = optimize_number(l2o, t, state, var_idx, min[var_idx], max[var_idx], &step_size[var_idx], &best_cost, &n_calls);
         has_improved = has_improved || has_improved_hc;
       } while(has_improved_hc && n_calls < MAX_CALLS);
     }
