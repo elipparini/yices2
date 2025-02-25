@@ -155,7 +155,7 @@ bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v
       *val = round(*val);
     }
 
-    if (*val == old_val) {
+    if (*val == old_val || *val == best_val) {
       continue;
     }
 
@@ -201,7 +201,7 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
     lp_interval_pick_value(interval, &lp_val);
     *val = lp_value_to_double(&lp_val);
 
-    if (*val == old_val) {
+    if (*val == old_val || *val == best_val) {
       continue;
     }
 
