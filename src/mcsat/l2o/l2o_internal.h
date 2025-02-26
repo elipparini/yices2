@@ -28,6 +28,7 @@ typedef struct {
   uint32_t n_var_fixed;
   term_t *var;
   double *val;
+  mcsat_value_t *val_mcsat;
 } l2o_search_state_t;
 
 

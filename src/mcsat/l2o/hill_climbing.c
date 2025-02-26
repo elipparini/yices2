@@ -102,13 +102,15 @@ void update_cache(l2o_t *l2o) {
 
 static
 bool optimize_bool(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, double *best, uint32_t *eval_runs) {
+  double *const val = &state->val[v];
+  mcsat_value_t *const val_mcsat = &state->val_mcsat[v];
   const double old_val = state->val[v];
 
   assert(is_boolean_term(l2o->terms, state->var[v]));
   assert(old_val == 0.0 || old_val == 1.0);
 
   // try opposite value
-  state->val[v] = old_val == 0.0 ? 1.0 : 0.0;   // try opposite value
+  *val = old_val == 0.0 ? 1.0 : 0.0;   // try opposite value
   double new_cost = l2o_evaluate_term_approx(l2o, t, state);
   (*eval_runs) ++;
 
@@ -117,9 +119,13 @@ bool optimize_bool(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, 
     update_cache(l2o);
   } else {
     // restore old value
-    state->val[v] = old_val;
+    *val = old_val;
   }
-  assert(success || state->val[v] == old_val);
+  assert(success || *val == old_val);
+  if (success) {
+    assert(val_mcsat->type == VALUE_BOOLEAN);
+    val_mcsat->b = (*val != 0.0);
+  }
   return success;
 }
 
@@ -179,6 +185,7 @@ static
 bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, double *best, uint32_t *eval_runs) {
   term_t t_var = state->var[v];
   double *const val = &state->val[v];
+  mcsat_value_t *const val_mcsat = &state->val_mcsat[v];
   const double old_val = state->val[v];
 
   if (l2o->nra == NULL) {
@@ -194,8 +201,9 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   bool success = false;
   double best_val = old_val;
 
-  lp_value_t lp_val;
+  lp_value_t lp_val, lp_val_best;
   lp_value_construct_zero(&lp_val);
+  lp_value_construct_zero(&lp_val_best);
   for (int i = 0; i < fs->size; ++i) {
     const lp_interval_t *interval = &fs->intervals[i];
     lp_interval_pick_value(interval, &lp_val);
@@ -212,11 +220,18 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
       update_cache(l2o);
       success = true;
       best_val = *val;
+      lp_value_swap(&lp_val_best, &lp_val);
     }
   }
-  lp_value_destruct(&lp_val);
 
+  if (success) {
+    assert(val_mcsat->type == VALUE_LIBPOLY);
+    lp_value_swap(&val_mcsat->lp_value, &lp_val_best);
+  }
   *val = success ? best_val : old_val;
+
+  lp_value_destruct(&lp_val);
+  lp_value_destruct(&lp_val_best);
   return success;
 }
 
@@ -271,12 +286,14 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
       has_improved = optimize_bool(l2o, t, state, var_idx, &best_cost, &n_calls);
     } else {
       has_improved = optimize_fs(l2o, t, state, var_idx, &best_cost, &n_calls);
+#if 0
       // TODO get feasible cell boundary and use it for optimize_number
       bool has_improved_hc;
       do {
         has_improved_hc = optimize_number(l2o, t, state, var_idx, &step_size[var_idx], &best_cost, &n_calls);
         has_improved = has_improved || has_improved_hc;
       } while(has_improved_hc && n_calls < MAX_CALLS);
+#endif
     }
 
     if (!has_improved) {    // Go to next var

@@ -1152,6 +1152,9 @@ double mcsat_value_to_double(const mcsat_value_t* val){
     return lp_value_to_double(&lp_v);
   }
 
+  case VALUE_NONE:
+    return 0.0;
+
   default:
     assert(false);
     return 0.0;
@@ -1189,6 +1192,7 @@ void double_to_mcsat_value(mcsat_value_t* val, mcsat_value_type_t type, double d
 void l2o_search_state_construct_empty(l2o_search_state_t *state) {
   state->var = NULL;
   state->val = NULL;
+  state->val_mcsat = NULL;
   state->n_var = 0;
   state->n_var_fixed = 0;
 }
@@ -1196,6 +1200,10 @@ void l2o_search_state_construct_empty(l2o_search_state_t *state) {
 void l2o_search_state_destruct(l2o_search_state_t *state) {
   free(state->var);
   free(state->val);
+  for (int i = 0; i < state->n_var; ++i) {
+    mcsat_value_destruct(&state->val_mcsat[i]);
+  }
+  free(state->val_mcsat);
 }
 
 static
@@ -1224,53 +1232,52 @@ bool l2o_is_valid_term(l2o_t *l2o, term_t t) {
 extern const lp_feasibility_set_t* get_fs_by_term(plugin_t *plugin, term_t v);
 
 static
-double l2o_pick_fs_value(l2o_t *l2o, term_t var) {
+void l2o_pick_fs_value(l2o_t *l2o, term_t var, mcsat_value_t *out) {
+  mcsat_value_destruct(out);
+
   if (l2o->nra == NULL) {
-    return 0.0;
+    mcsat_value_construct_default(out);
+    return;
   }
 
-  double result;
   const lp_feasibility_set_t *fs = get_fs_by_term(l2o->nra, var);
+  lp_value_t lp_val;
+  lp_value_construct_zero(&lp_val);
   if (fs != NULL) {
-    lp_value_t lp_val;
-    lp_value_construct_zero(&lp_val);
     lp_feasibility_set_pick_value(fs, &lp_val);
-    result = lp_value_to_double(&lp_val);
-    lp_value_destruct(&lp_val);
-  } else {
-    result = 0.0;
   }
-  return result;
+  mcsat_value_construct_lp_value(out, &lp_val);
+  lp_value_destruct(&lp_val);
 }
 
 /** checks if there is a cached value and if it is compatible with the feasible set if it exists. */
 static
-double l2o_pick_cache_value(l2o_t *l2o, term_t var, const mcsat_value_t *val_mcsat) {
-  switch (val_mcsat->type) {
+void l2o_pick_cache_value(l2o_t *l2o, term_t var, const mcsat_value_t *in, mcsat_value_t *out) {
+  switch (in->type) {
     case VALUE_BOOLEAN:
-      return val_mcsat->b;
     case VALUE_RATIONAL:
-      return mcsat_value_to_double(val_mcsat);
+      mcsat_value_assign(out, in);
+      break;
     case VALUE_NONE:
     case VALUE_BV:
     default:
       // not supported yet
       assert(false);
-      return 0.0;
+      return;
     case VALUE_LIBPOLY: {
       // check if we can find a feasible set
-      double result;
       const lp_feasibility_set_t *fs = get_fs_by_term(l2o->nra, var);
-      if (fs == NULL || lp_feasibility_set_contains(fs, &val_mcsat->lp_value)) {
-        result = mcsat_value_to_double(val_mcsat);
+      if (fs == NULL || lp_feasibility_set_contains(fs, &in->lp_value)) {
+        mcsat_value_assign(out, in);
       } else {
         lp_value_t lp_val;
         lp_value_construct_zero(&lp_val);
         lp_feasibility_set_pick_value(fs, &lp_val);
-        result = lp_value_to_double(&lp_val);
+        mcsat_value_destruct(out);
+        mcsat_value_construct_lp_value(out, &lp_val);
         lp_value_destruct(&lp_val);
       }
-      return result;
+      break;
     }
   }
 }
@@ -1306,9 +1313,18 @@ void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, b
   state->n_var = n_var;
   state->val = safe_malloc(sizeof(double) * n_var);
   state->var = safe_malloc(sizeof(term_t) * n_var);
+  state->val_mcsat = safe_malloc(sizeof(mcsat_value_t) * n_var);
+
+  lp_value_t none;
+  lp_value_construct_none(&none);
+  for (uint32_t i = 0; i < n_var; ++i) {
+    mcsat_value_construct_lp_value(&state->val_mcsat[i], &none);
+  }
+  lp_value_destruct(&none);
 
   double *val = state->val;
   term_t *v = state->var;
+  mcsat_value_t *val_mcsat = state->val_mcsat;
 
   ivector_t vars, vars_fixed;
   init_ivector(&vars, 0);
@@ -1339,19 +1355,27 @@ void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, b
   for (uint32_t i = 0; i < vars_fixed.size; ++ i) {
     variable_t var = vars_fixed.data[i];
     v[pos] = variable_db_get_term(trail->var_db, var);
-    val[pos] = mcsat_value_to_double(trail_get_value(trail, var));
+    const mcsat_value_t *tv = trail_get_value(trail, var);
+    val[pos] = mcsat_value_to_double(tv);
+    mcsat_value_assign(&val_mcsat[pos], tv);
     pos++;
   }
   for (uint32_t i = 0; i < vars.size; ++ i) {
     variable_t var = vars.data[i];
     v[pos] = variable_db_get_term(trail->var_db, var);
     if (use_cached_values && trail_has_cached_value(trail, var)) {
-      val[pos] = l2o_pick_cache_value(l2o, v[pos], trail_get_cached_value(trail, var));
+      mcsat_value_t pick;
+      mcsat_value_construct_default(&pick);
+      l2o_pick_cache_value(l2o, v[pos], trail_get_cached_value(trail, var), &pick);
+      mcsat_value_assign(&val_mcsat[pos], &pick);
+      mcsat_value_destruct(&pick);
     } else if (variable_db_is_boolean(trail->var_db, var)) {
-      val[pos] = 1.0;
+      mcsat_value_destruct(&val_mcsat[pos]);
+      mcsat_value_construct_bool(&val_mcsat[pos], true);
     } else {
-      val[pos] = l2o_pick_fs_value(l2o, v[pos]);
+      l2o_pick_fs_value(l2o, v[pos], &val_mcsat[pos]);
     }
+    val[pos] = mcsat_value_to_double(&val_mcsat[pos]);
     pos++;
   }
   assert(pos == n_var);
@@ -1368,6 +1392,7 @@ void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, b
 // Given variables v and values s_mpq, set hint to the trail
 static
 void l2o_set_hint(l2o_t *l2o, mcsat_trail_t *trail, const l2o_search_state_t *state) {
+#if 0
   term_table_t* terms = l2o->terms;
 
   double val_d;
@@ -1390,6 +1415,15 @@ void l2o_set_hint(l2o_t *l2o, mcsat_trail_t *trail, const l2o_search_state_t *st
 
     assert(vi_type != INT_TYPE || (val_mcsat.type == VALUE_LIBPOLY && lp_value_is_integer(&val_mcsat.lp_value)));
   }
+#else
+  assert(state->n_var_fixed <= state->n_var);
+  for (uint32_t i = state->n_var_fixed; i < state->n_var; ++ i) {
+    const mcsat_value_t *tmp = &state->val_mcsat[i];
+    if (tmp->type != VALUE_NONE) {
+      hint_value_to_trail(trail, state->var[i], tmp);
+    }
+  }
+#endif
 }
 
 /** Minimize L2O cost function and set hint to trail */
