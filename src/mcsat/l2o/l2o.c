@@ -258,6 +258,7 @@ bool do_simplify(term_kind_t kind) {
     case ARITH_IS_INT_ATOM:
     case ARITH_BINEQ_ATOM:
     case EQ_TERM:
+    case UNINTERPRETED_TERM:
       return true;
 
     default:
