@@ -244,11 +244,15 @@ const mcsat_value_t* trail_get_value_by_term(const mcsat_trail_t *trail, term_t 
 }
 
 static
-bool trail_query_bool_value(const mcsat_trail_t *trail, term_t term, bool *b) {
+bool trail_query_bool_value(const mcsat_trail_t *trail, term_t term, bool *b, int_hset_t *used_trail) {
+  if (trail == NULL) {
+    return false;
+  }
   const mcsat_value_t *val = trail_get_value_by_term(trail, unsigned_term(term));
   if (val == NULL) {
     return false;
   }
+  int_hset_add(used_trail, unsigned_term(term));
   assert(val->type == VALUE_BOOLEAN);
   *b = val->b;
   if (opposite_term(term)) *b = !(*b);
@@ -256,7 +260,7 @@ bool trail_query_bool_value(const mcsat_trail_t *trail, term_t term, bool *b) {
 }
 
 static
-term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
+term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail, int_hset_t *used_trail) {
   bool use_classic = l2o->mode == L2O_CLASSIC;
   if (trace_enabled(l2o->tracer, "mcsat::l2o")) {
     printf("l2o_apply start\n");
@@ -324,7 +328,7 @@ term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
     const term_t one_term = _o_yices_int32(1);
 
     bool b;
-    if (trail_query_bool_value(trail, current, &b)) {
+    if (trail_query_bool_value(trail, current, &b, used_trail)) {
       current_l2o = b ? one_term : zero_term;
       l2o_set(l2o, current, current_l2o);
       ivector_pop(&l2o_stack);
@@ -466,8 +470,8 @@ term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
         bool found = false;
         for (uint32_t i = 0; i < n; ++i) {
           bool b;
-          if (trail_query_bool_value(trail, args[i], &b) && b) {
-            current_l2o = is_or ? one_term : zero_term;
+          if (trail_query_bool_value(trail, args[i], &b, used_trail) && b) {
+            current_l2o = is_or ? zero_term : one_term;
             found = true;
             break;
           }
@@ -497,7 +501,7 @@ term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
             args_l2o[i] = arg_i_l2o;
             assert(arg_i_l2o != NULL_TERM);
             bool b;
-            if (arg_i_l2o == zero_term || trail_query_bool_value(trail, args[i], &b)) {
+            if (arg_i_l2o == zero_term || trail_query_bool_value(trail, args[i], &b, used_trail)) {
               assert(arg_i_l2o == zero_term || !b);
               args_l2o[i] = one_term;   // neutral element for product
             }
@@ -509,7 +513,7 @@ term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
             term_t arg_i_l2o = l2o_get(l2o, arg_i);
             assert(arg_i_l2o != NULL_TERM);
             bool b;
-            if (arg_i_l2o == zero_term || trail_query_bool_value(trail, arg_i, &b)) {
+            if (arg_i_l2o == zero_term || trail_query_bool_value(trail, arg_i, &b, used_trail)) {
               assert(arg_i_l2o == zero_term || !b);
               args_l2o[i] = zero_term;   // neutral element for sum
             } else {
@@ -535,13 +539,13 @@ term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
         b = is_neg ? opposite_term(b) : b;
 
         term_t
-          l_c = l2o_get(l2o, c),
+          //l_c = l2o_get(l2o, c),
           l_a = l2o_get(l2o, a),
           l_b = l2o_get(l2o, b);
 
         // ensure that all sub-terms are evaluated
         bool args_already_visited = true;
-        if (l_c == NULL_TERM) { ivector_push(&l2o_stack, c); args_already_visited = false; }
+        //if (l_c == NULL_TERM) { ivector_push(&l2o_stack, c); args_already_visited = false; }
         if (l_a == NULL_TERM) { ivector_push(&l2o_stack, a); args_already_visited = false; }
         if (l_b == NULL_TERM) { ivector_push(&l2o_stack, b); args_already_visited = false; }
         if (!args_already_visited) {
@@ -549,13 +553,13 @@ term_t l2o_apply(l2o_t* l2o, term_t term, const mcsat_trail_t *trail) {
           continue;
         }
 
-        if (l_c == one_term) {
-          current_l2o = l_a;
-        } else if (l_c == zero_term) {
-          current_l2o = l_b;
-        } else {
+        //if (l_c == one_term) {
+        //  current_l2o = l_a;
+        //} else if (l_c == zero_term) {
+        //  current_l2o = l_b;
+        //} else {
           current_l2o = _o_yices_ite(c, l_a, l_b);
-        }
+        //}
         break;
       }
 
@@ -1444,12 +1448,22 @@ term_t l2o_make_cost_fx(l2o_t* l2o, const mcsat_trail_t *trail) {
 
   ivector_t* assertions = &l2o->assertions;
   int32_t n_assertions = assertions->size;
-  term_t f_l2o[n_assertions];
+  ivector_t f_l2o;
+  init_ivector(&f_l2o, 0);
+
+  int_hset_t used_trail_assignments;
+  init_int_hset(&used_trail_assignments, 0);
   for (uint32_t i = 0; i < n_assertions; ++ i) {
-    f_l2o[i] = l2o_apply(l2o, assertions->data[i], trail);
+    ivector_push(&f_l2o, l2o_apply(l2o, assertions->data[i], trail, &used_trail_assignments));
   }
-  return mk_sum(l2o, n_assertions, f_l2o);
-  // return yices_sum(n_assertions, f_l2o); this is slower
+  int_hset_close(&used_trail_assignments);
+  for (uint32_t i = 0; i < used_trail_assignments.nelems; ++i) {
+    ivector_push(&f_l2o, l2o_apply(l2o, used_trail_assignments.data[i], NULL, NULL));
+  }
+  term_t result = mk_sum(l2o, f_l2o.size, f_l2o.data);
+  delete_int_hset(&used_trail_assignments);
+  delete_ivector(&f_l2o);
+  return result;
 }
 
 void l2o_run(l2o_t* l2o, mcsat_trail_t* trail, bool use_cached_values, const var_queue_t *queue) {
