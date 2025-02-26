@@ -248,6 +248,7 @@ bool trail_query_bool_value(const mcsat_trail_t *trail, term_t term, bool *b, in
   if (trail == NULL) {
     return false;
   }
+  assert(good_term(trail->var_db->terms, term));
   const mcsat_value_t *val = trail_get_value_by_term(trail, unsigned_term(term));
   if (val == NULL) {
     return false;
@@ -1458,7 +1459,14 @@ term_t l2o_make_cost_fx(l2o_t* l2o, const mcsat_trail_t *trail) {
   }
   int_hset_close(&used_trail_assignments);
   for (uint32_t i = 0; i < used_trail_assignments.nelems; ++i) {
-    ivector_push(&f_l2o, l2o_apply(l2o, used_trail_assignments.data[i], NULL, NULL));
+    term_t t = used_trail_assignments.data[i];
+    variable_t var = variable_db_get_variable_if_exists(trail->var_db, t);
+    assert(trail_has_value(trail, var));
+    bool negated = !trail_get_boolean_value(trail, var);
+    if (negated)
+      t = opposite_term(t);
+    assert(good_term(l2o->terms, t));
+    ivector_push(&f_l2o, l2o_apply(l2o, t, NULL, NULL));
   }
   term_t result = mk_sum(l2o, f_l2o.size, f_l2o.data);
   delete_int_hset(&used_trail_assignments);
