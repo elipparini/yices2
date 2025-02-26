@@ -250,6 +250,21 @@ bool trail_get_bool_value_term(const mcsat_trail_t *trail, term_t t, bool *b) {
   return false;
 }
 
+static inline
+bool do_simplify(term_kind_t kind) {
+  switch (kind) {
+    case ARITH_EQ_ATOM:
+    case ARITH_GE_ATOM:
+    case ARITH_IS_INT_ATOM:
+    case ARITH_BINEQ_ATOM:
+    case EQ_TERM:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
 static
 term_t l2o_simplify(l2o_t* l2o, term_t t, const mcsat_trail_t *trail, int_hset_t *used_terms) {
   term_table_t *table = l2o->terms;
@@ -262,13 +277,11 @@ term_t l2o_simplify(l2o_t* l2o, term_t t, const mcsat_trail_t *trail, int_hset_t
   int_hmap_pair_t *p = int_hmap_find(cache, t);
   if (p) return p->val;
 
-  term_t result;
-  // check if the current term is boolean and has a trail value
-  // TODO maybe to this just for the boolean atoms (i.e. arith >= 0, ==, etc.)
   bool value;
+  term_t result;
   if (is_neg_term(t)) {
     result = opposite_term(l2o_simplify(l2o, opposite_term(t), trail, used_terms));
-  } else if (is_boolean_term(table, t) && trail_get_bool_value_term(trail, t, &value)) {
+  } else if (is_boolean_term(table, t) && do_simplify(t_kind) && trail_get_bool_value_term(trail, t, &value)) {
     int_hset_add(used_terms, unsigned_term(t));
     result = value ? true_term : false_term;
   } else if (term_is_composite(table, t)) {
