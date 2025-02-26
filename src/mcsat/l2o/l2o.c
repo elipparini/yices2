@@ -252,6 +252,9 @@ bool trail_get_bool_value_term(const mcsat_trail_t *trail, term_t t, bool *b) {
 
 static inline
 bool do_simplify(term_kind_t kind) {
+#if 1
+  return true;
+#else
   switch (kind) {
     case ARITH_EQ_ATOM:
     case ARITH_GE_ATOM:
@@ -264,6 +267,7 @@ bool do_simplify(term_kind_t kind) {
     default:
       return false;
   }
+#endif
 }
 
 static

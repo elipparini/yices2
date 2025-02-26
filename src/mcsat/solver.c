@@ -1480,7 +1480,8 @@ void mcsat_process_requests(mcsat_solver_t* mcsat) {
 
     // recache
     if (mcsat->pending_requests_all.recache) {
-      l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 3, NULL);
+      bool use_cached_values = !trail_is_at_base_level(mcsat->trail) || (*mcsat->solver_stats.recaches) % 3;
+      l2o_run(&mcsat->l2o, mcsat->trail, use_cached_values, NULL);
       (*mcsat->solver_stats.recaches) ++;
       // trail_model_cache_clear(mcsat->trail);
       mcsat->pending_requests_all.recache = false;
@@ -2777,6 +2778,7 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
   // recache
   uint32_t recache_limit = (*mcsat->solver_stats.conflicts) + mcsat->heuristic_params.recache_initial_delay;
   uint32_t recache_round = 0;
+  bool recache_sticky_flag = false;
 
   // TODO decide whether to do a l2o at the beginning?
   //l2o_run(&mcsat->l2o, mcsat->trail, false);
@@ -2805,14 +2807,21 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
       goto conflict;
     }
 
-    if (trail_is_at_base_level(mcsat->trail) && (*mcsat->solver_stats.conflicts) > recache_limit) {
+    if ((*mcsat->solver_stats.conflicts) > recache_limit) {
       // printf("\n*mcsat->solver_stats.conflicts: %d", *mcsat->solver_stats.conflicts);
       ++recache_round;
       mcsat_request_recache(mcsat);
+      if (!trail_is_at_base_level(mcsat->trail)) recache_sticky_flag = true;
       double l = log10(recache_round + 9);
       recache_limit = (*mcsat->solver_stats.conflicts) +
                       (recache_round * l * l * l *
                        mcsat->heuristic_params.recache_interval);
+    }
+
+    // a recache was triggered before the last restart, let's do it now
+    if (trail_is_at_base_level(mcsat->trail) && recache_sticky_flag) {
+      recache_sticky_flag = false;
+      mcsat_request_recache(mcsat);
     }
 
     // If any requests, process them and go again
