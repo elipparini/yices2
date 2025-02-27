@@ -252,7 +252,7 @@ bool trail_get_bool_value_term(const mcsat_trail_t *trail, term_t t, bool *b) {
 
 static inline
 bool do_simplify(term_kind_t kind) {
-#if 1
+#if 0
   return true;
 #else
   switch (kind) {
