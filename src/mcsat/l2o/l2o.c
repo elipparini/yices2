@@ -22,7 +22,6 @@
 #include "terms/term_explorer.h"
 #include "api/yices_api_lock_free.h"
 #include "utils/int_array_sort2.h"
-#include "utils/prng.h"
 
 #include <math.h>
 #include <poly/feasibility_set.h>
@@ -59,8 +58,6 @@ void l2o_construct(l2o_t* l2o, l2o_mode_t mode, term_table_t* terms, jmp_buf* ha
   l2o->tracer = NULL;
   l2o->exception = handler;
   scope_holder_construct(&l2o->scope);
-
-  random_seed(&l2o->random, 0x4ab319dc);
 
   statistics_construct(&l2o->stats);
   l2o_stats_init(l2o);
@@ -1430,20 +1427,7 @@ void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, b
     if (use_cached_values && trail_has_cached_value(trail, var)) {
       val[pos] = l2o_pick_cache_value(l2o, v[pos], trail_get_cached_value(trail, var));
     } else if (variable_db_is_boolean(trail->var_db, var)) {
-      switch ((*l2o->l2o_stats.n_runs) % 4) {
-        case 0:
-          val[pos] = 1.0;
-          break;
-        case 1:
-          val[pos] = 0.0;
-          break;
-        case 2:
-          val[pos] = val[pos] == 1.0 ? 0.0 : 1.0;
-          break;
-        case 3:
-          val[pos] = (double)random_uint(&l2o->random, 2);
-          break;
-      }
+      val[pos] = 1.0;
     } else {
       val[pos] = l2o_pick_fs_value(l2o, v[pos]);
     }

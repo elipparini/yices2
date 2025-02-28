@@ -93,8 +93,6 @@ typedef struct {
     statistic_int_t* n_eval_runs;
   } l2o_stats;
 
-  uint32_t random;
-
   /** Tracer */
   tracer_t* tracer;
 
