@@ -346,8 +346,8 @@ static
 void mcsat_heuristics_init(mcsat_solver_t* mcsat) {
   mcsat->heuristic_params.restart_interval = 10;
   mcsat->heuristic_params.lemma_restart_weight_type = LEMMA_WEIGHT_SIZE;
-  mcsat->heuristic_params.recache_interval = 10;
-  mcsat->heuristic_params.recache_initial_delay = 25;
+  mcsat->heuristic_params.recache_interval = 100;
+  mcsat->heuristic_params.recache_initial_delay = 50;
   mcsat->heuristic_params.random_decision_freq = mcsat->ctx->mcsat_options.rand_dec_freq;
   mcsat->heuristic_params.random_decision_seed = mcsat->ctx->mcsat_options.rand_dec_seed;
 }
@@ -2785,6 +2785,7 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
 
   // Whether to run learning
   bool learning = true;
+  bool l2o_first = true;
 
   while (!mcsat->stop_search) {
 
@@ -2807,7 +2808,8 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
       goto conflict;
     }
 
-    if ((*mcsat->solver_stats.conflicts) > recache_limit) {
+    if ((*mcsat->solver_stats.conflicts) > recache_limit && (!l2o_first || trail_is_at_base_level(mcsat->trail))) {
+      l2o_first = false;
       // printf("\n*mcsat->solver_stats.conflicts: %d", *mcsat->solver_stats.conflicts);
       ++recache_round;
       mcsat_request_recache(mcsat);
