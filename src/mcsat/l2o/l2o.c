@@ -1336,6 +1336,7 @@ double l2o_pick_cache_value(l2o_t *l2o, term_t var, const mcsat_value_t *val_mcs
   }
 }
 
+#define L2O_VAR_PRIO_SORTING
 #ifdef L2O_VAR_PRIO_SORTING
 static
 bool l2o_compare_vars_vsids(void *data, int32_t a, int32_t b) {
