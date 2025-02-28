@@ -221,7 +221,7 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
 }
 
 
-#define MAX_ITER  1000
+#define MAX_ITER  250
 #define MAX_CALLS (MAX_ITER * 4)
 
 void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
