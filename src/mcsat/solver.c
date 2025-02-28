@@ -1480,10 +1480,20 @@ void mcsat_process_requests(mcsat_solver_t* mcsat) {
 
     // recache
     if (mcsat->pending_requests_all.recache) {
-      l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 3, NULL);
+      ivector_t hints;
+      init_ivector(&hints, 0);
+      l2o_run(&mcsat->l2o, mcsat->trail, (*mcsat->solver_stats.recaches) % 3, NULL, &hints);
+      for (int i = 0; i < 5; ++i) {
+        if (i >= hints.size) break;
+        term_t t = hints.data[i];
+        if (variable_db_has_variable(mcsat->var_db, t)) {
+          mcsat_add_decision_hint(mcsat, variable_db_get_variable_if_exists(mcsat->var_db, t));
+        }
+      }
       (*mcsat->solver_stats.recaches) ++;
       // trail_model_cache_clear(mcsat->trail);
       mcsat->pending_requests_all.recache = false;
+      delete_ivector(&hints);
     }
 
     // All services

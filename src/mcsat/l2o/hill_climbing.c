@@ -20,6 +20,7 @@
 
 #include "mcsat/l2o/l2o.h"
 #include "mcsat/l2o/l2o_internal.h"
+#include "utils/int_array_sort2.h"
 
 #include <poly/feasibility_set.h>
 #include <poly/interval.h>
@@ -220,11 +221,17 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   return success;
 }
 
+static
+bool cmp_steps(void *data, int32_t x, int32_t y) {
+  uint32_t *steps = data;
+  return steps[x] > steps[y];
+}
+
 
 #define MAX_ITER  1000
 #define MAX_CALLS (MAX_ITER * 4)
 
-void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
+void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state, ivector_t *hints) {
   assert(state->n_var >= 1);
   assert(state->n_var_fixed <= state->n_var);
 
@@ -247,6 +254,11 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   double step_size[n_var];
   for (uint32_t i = 0; i < n_var; ++i) {
     step_size[i] = 1.0;
+  }
+
+  uint32_t steps[n_var];
+  for (uint32_t i = 0; i < n_var; ++i) {
+    steps[i] = 0;
   }
 
   // Reset evaluator cache cost (this forces the update of the cache at the next call)
@@ -284,14 +296,31 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
       n_var_visited ++;
     } else {
       var_prio(&order, var_idx - state->n_var_fixed);
+      steps[var_idx] ++;
       n_var_visited = 0;
     }
   }
 
   (*l2o->l2o_stats.n_eval_runs) += n_calls;
 
+  // hint the best variable
+  int32_t idx[n_var];
+  for (uint32_t i = 0; i < n_var; ++i) {
+    idx[i] = i;
+  }
+  int_array_sort2(idx, n_var, steps, cmp_steps);
+  for (uint32_t i = 0; i < n_var; ++i) {
+    assert(i == 0 || steps[idx[i-1]] >= steps[idx[i]]);
+    if (steps[idx[i]] == 0) {
+      break;
+    }
+    assert(idx[i] >= state->n_var_fixed);
+    ivector_push(hints, state->var[idx[i]]);
+  }
+
 #ifndef NDEBUG
   for (int j = 0; j < state->n_var_fixed; ++j) {
+    assert(steps[j] == 0);
     assert(step_size[j] == 1.0);
   }
 #endif
