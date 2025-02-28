@@ -346,8 +346,8 @@ static
 void mcsat_heuristics_init(mcsat_solver_t* mcsat) {
   mcsat->heuristic_params.restart_interval = 10;
   mcsat->heuristic_params.lemma_restart_weight_type = LEMMA_WEIGHT_SIZE;
-  mcsat->heuristic_params.recache_interval = 100;
-  mcsat->heuristic_params.recache_initial_delay = 100;
+  mcsat->heuristic_params.recache_interval = 10;
+  mcsat->heuristic_params.recache_initial_delay = 25;
   mcsat->heuristic_params.random_decision_freq = mcsat->ctx->mcsat_options.rand_dec_freq;
   mcsat->heuristic_params.random_decision_seed = mcsat->ctx->mcsat_options.rand_dec_seed;
 }
@@ -2812,11 +2812,10 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
       ++recache_round;
       mcsat_request_recache(mcsat);
       if (!trail_is_at_base_level(mcsat->trail)) recache_sticky_flag = true;
-      recache_limit = (*mcsat->solver_stats.conflicts) + mcsat->heuristic_params.recache_interval;
-      //double l = log10(recache_round + 9);
-      //recache_limit = (*mcsat->solver_stats.conflicts) +
-      //                (recache_round * l * l * l *
-      //                 mcsat->heuristic_params.recache_interval);
+      double l = log10(recache_round + 9);
+      recache_limit = (*mcsat->solver_stats.conflicts) +
+                      (recache_round * l * l * l *
+                       mcsat->heuristic_params.recache_interval);
     }
 
     // a recache was triggered before the last restart, let's do it now
