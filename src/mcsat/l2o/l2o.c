@@ -1514,6 +1514,7 @@ void l2o_reset(l2o_t *l2o) {
   // TODO reset varset_table, varset_members_cache, and freevars_map
   int_hmap_reset(&l2o->l2o_map);
   int_hmap_reset(&l2o->simplify_map);
+  double_hmap_reset(&l2o->eval_cache);
 }
 
 static
