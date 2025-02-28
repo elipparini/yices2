@@ -346,8 +346,8 @@ static
 void mcsat_heuristics_init(mcsat_solver_t* mcsat) {
   mcsat->heuristic_params.restart_interval = 10;
   mcsat->heuristic_params.lemma_restart_weight_type = LEMMA_WEIGHT_SIZE;
-  mcsat->heuristic_params.recache_interval = 20;
-  mcsat->heuristic_params.recache_initial_delay = 20;
+  mcsat->heuristic_params.recache_interval = 10;
+  mcsat->heuristic_params.recache_initial_delay = 25;
   mcsat->heuristic_params.random_decision_freq = mcsat->ctx->mcsat_options.rand_dec_freq;
   mcsat->heuristic_params.random_decision_seed = mcsat->ctx->mcsat_options.rand_dec_seed;
 }
@@ -2793,9 +2793,6 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
       restart_resource = 0;
       luby_next(&luby);
       mcsat_request_restart(mcsat);
-
-      recache_limit = (*mcsat->solver_stats.conflicts) + mcsat->heuristic_params.recache_initial_delay;
-      recache_round = 0;
     }
 
     // Process any outstanding requests
