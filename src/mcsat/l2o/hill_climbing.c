@@ -207,7 +207,7 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   for (int i = 0; i < fs->size; ++i) {
     const lp_interval_t *interval = &fs->intervals[i];
     lp_interval_pick_value(interval, &lp_val);
-    if (!lp_value_is_integer(&lp_val)) {
+    if (!lp_value_is_rational(&lp_val)) {
       continue;
     }
     *val = lp_value_to_double(&lp_val);
