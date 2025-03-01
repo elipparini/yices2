@@ -91,6 +91,8 @@ typedef struct {
     statistic_int_t* n_runs;
     // Eval runs
     statistic_int_t* n_eval_runs;
+    // literal hints
+    statistic_int_t* n_literal_hints;
   } l2o_stats;
 
   /** Tracer */

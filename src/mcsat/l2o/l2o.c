@@ -34,6 +34,7 @@ void l2o_stats_init(l2o_t* l2o) {
   l2o->l2o_stats.n_runs = statistics_new_int(&l2o->stats, "l2o::runs");
   l2o->l2o_stats.n_terms = statistics_new_int(&l2o->stats, "l2o::terms");
   l2o->l2o_stats.n_eval_runs = statistics_new_int(&l2o->stats, "l2o::eval_runs");
+  l2o->l2o_stats.n_literal_hints = statistics_new_int(&l2o->stats, "l2o::eval_literal_hints");
 }
 
 void l2o_construct(l2o_t* l2o, l2o_mode_t mode, term_table_t* terms, jmp_buf* handler, plugin_t* nra) {
@@ -1469,6 +1470,7 @@ void l2o_set_hint(l2o_t *l2o, mcsat_trail_t *trail, const l2o_search_state_t *st
     mcsat_value_construct_bool(&val_mcsat, is_neg == (pc->val != 0));
     mcsat_model_set_value(&trail->model, v, &val_mcsat);
     mcsat_value_destruct(&val_mcsat);
+    (*l2o->l2o_stats.n_literal_hints) ++;
   }
 }
 
