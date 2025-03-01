@@ -1490,13 +1490,15 @@ void l2o_minimize_and_set_hint(l2o_t *l2o, term_t t, mcsat_trail_t *trail, bool 
   l2o_search_state_destruct(&state);
 }
 
-// TODO mark all l2o_terms for GC or clear term tables
 static
 void l2o_reset(l2o_t *l2o) {
-  // TODO reset varset_table, varset_members_cache, and freevars_map
   int_hmap_reset(&l2o->l2o_map);
   int_hmap_reset(&l2o->simplify_map);
   double_hmap_reset(&l2o->eval_cache);
+  double_hmap_reset(&l2o->eval_map);
+  reset_varset_table(&l2o->varset_table);
+  int_hmap_reset(&l2o->freevars_map);
+  reset_pmap2(&l2o->varset_members_cache);
 }
 
 static
