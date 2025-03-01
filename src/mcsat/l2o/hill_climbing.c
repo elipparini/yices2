@@ -97,7 +97,12 @@ bool did_improve(double *best, double new) {
 
 static inline
 void update_cache(l2o_t *l2o) {
-  double_hmap_swap(&l2o->eval_cache, &l2o->eval_map);
+  for (double_hmap_pair_t *ep = double_hmap_first_record(&l2o->eval_map);
+       ep != NULL;
+       ep = double_hmap_next_record(&l2o->eval_map, ep)) {
+    double_hmap_pair_t *cp = double_hmap_get(&l2o->eval_cache, ep->key);
+    cp->val = ep->val;
+  }
 }
 
 static
