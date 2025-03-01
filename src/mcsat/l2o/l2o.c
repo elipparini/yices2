@@ -1453,6 +1453,24 @@ void l2o_set_hint(l2o_t *l2o, mcsat_trail_t *trail, const l2o_search_state_t *st
     assert(vi_type != INT_TYPE || (val_mcsat.type == VALUE_LIBPOLY && lp_value_is_integer(&val_mcsat.lp_value)));
     mcsat_value_destruct(&val_mcsat);
   }
+
+  // set literals as well
+  for (int_hmap_pair_t *p = int_hmap_first_record(&l2o->l2o_map);
+       p != NULL;
+       p = int_hmap_next_record(&l2o->l2o_map, p)) {
+    variable_t v = variable_db_get_variable_if_exists(trail->var_db, unsigned_term(p->key));
+    if (v == variable_null) continue;
+    if (!variable_db_is_boolean(trail->var_db, v)) continue;
+    bool is_neg = is_neg_term(p->key);
+    term_t t_l2o = p->val;
+    double_hmap_pair_t *pc = double_hmap_find(&l2o->eval_cache, t_l2o);
+    if (pc == NULL) continue;
+    mcsat_value_construct_bool(&val_mcsat, is_neg == (pc->val != 0));
+    if(!trail_has_value(trail, v)) {
+      mcsat_model_set_value(&trail->model, v, &val_mcsat);
+    }
+    mcsat_value_destruct(&val_mcsat);
+  }
 }
 
 /** Minimize L2O cost function and set hint to trail */
