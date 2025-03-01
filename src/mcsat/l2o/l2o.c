@@ -1184,7 +1184,7 @@ void set_l2o_vars(l2o_t* l2o, int_hset_t* var_set){
  * Provide hint to the trail cache 
  */
 static
-void hint_value_to_trail(mcsat_trail_t* trail, variable_t v, const mcsat_value_t* val) {
+void hint_value_to_trail(mcsat_trail_t* trail, term_t v, const mcsat_value_t* val) {
   //mcsat_plugin_context_t* mctx;
   //mctx = (mcsat_plugin_context_t*) self;
   variable_t var = variable_db_get_variable_if_exists(trail->var_db, v);
@@ -1223,6 +1223,7 @@ static
 void double_to_mcsat_value(mcsat_value_t* val, mcsat_value_type_t type, double d) {
   switch (type) {
     case VALUE_BOOLEAN:
+      assert(d == 0.0 || d == 1.0);
       mcsat_value_construct_bool(val, d != 0.0);
       break;
     case VALUE_RATIONAL: {
@@ -1450,6 +1451,7 @@ void l2o_set_hint(l2o_t *l2o, mcsat_trail_t *trail, const l2o_search_state_t *st
     hint_value_to_trail(trail, state->var[i], &val_mcsat);
 
     assert(vi_type != INT_TYPE || (val_mcsat.type == VALUE_LIBPOLY && lp_value_is_integer(&val_mcsat.lp_value)));
+    mcsat_value_destruct(&val_mcsat);
   }
 }
 
