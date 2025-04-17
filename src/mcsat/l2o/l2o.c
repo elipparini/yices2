@@ -213,6 +213,19 @@ void l2o_var_set(l2o_t* l2o, term_t t, term_t t_l2o) {
 }
 #endif
 
+static
+term_t mk_min(l2o_t *l2o, uint32_t n, term_t* args){
+  assert(n > 0);
+
+  term_t t1 = args[0];
+  if (n == 1) {
+    return t1;
+  }
+
+  term_t t2 = mk_min(l2o, n - 1, args + 1);
+  term_t cond = _o_yices_arith_lt_atom(t1, t2);
+  return _o_yices_ite(cond, t1, t2);
+}
 
 static
 term_t mk_product(l2o_t* l2o, uint32_t n, term_t* args){
@@ -511,7 +524,8 @@ term_t l2o_apply(l2o_t* l2o, term_t t) {
             }
           }
           if (args_already_visited) {
-            current_l2o = mk_product(l2o, n, args_l2o);
+            //current_l2o = mk_product(l2o, n, args_l2o);
+            current_l2o = mk_min(l2o, n, args_l2o);
           } else {
             continue;
           }
