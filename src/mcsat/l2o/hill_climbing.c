@@ -181,6 +181,8 @@ bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v
   return success;
 }
 
+#define WIDTH 1
+
 static
 bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, double *best, uint32_t *eval_runs) {
   term_t t_var = state->var[v];
@@ -194,9 +196,21 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
 
   const lp_feasibility_set_t *fs = get_fs_by_term(l2o->nra, t_var);
   // no feasible sets known or any number is feasible
-  if (fs == NULL) {
+  if (fs == NULL || fs->size <= 1) {
     return false;
   }
+
+  // find the interval where val_mcsat is in
+  assert(val_mcsat->type == VALUE_LIBPOLY);
+  assert(lp_feasibility_set_contains(fs, &val_mcsat->lp_value));
+
+  int fs_idx;
+  for (fs_idx = 0; fs_idx < fs->size; ++fs_idx) {
+    if (lp_interval_contains(fs->intervals + fs_idx, &val_mcsat->lp_value)) {
+      break;
+    }
+  }
+  assert(fs_idx < fs->size);
 
   bool success = false;
   double best_val = old_val;
@@ -204,8 +218,11 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
   lp_value_t lp_val, lp_val_best;
   lp_value_construct_zero(&lp_val);
   lp_value_construct_zero(&lp_val_best);
-  for (int i = 0; i < fs->size; ++i) {
-    const lp_interval_t *interval = &fs->intervals[i];
+  for (int i = -WIDTH; i <= WIDTH; ++i) {
+    if (i == 0) continue;
+    if (fs_idx + i < 0 || fs_idx + i >= fs->size) continue;
+
+    const lp_interval_t *interval = &fs->intervals[fs_idx + i];
     lp_interval_pick_value(interval, &lp_val);
     if (!lp_value_is_rational(&lp_val)) {
       continue;
