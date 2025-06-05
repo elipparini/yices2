@@ -31,23 +31,23 @@ void cnf_destruct(cnf_t* cnf) {
   int_lset_destruct(&cnf->converted);
 }
 
-static
+static inline
 bool cnf_is_converted(const cnf_t* cnf, variable_t var) {
   return int_lset_has_list(&cnf->converted, var);
 }
 
-static
+static inline
 void cnf_begin(cnf_t* cnf, variable_t var) {
   assert(!cnf_is_converted(cnf, var));
   cnf->variable = var;
 }
 
-static
+static inline
 void cnf_end(cnf_t* cnf) {
   cnf->variable = variable_null;
 }
 
-static
+static inline
 void cnf_remove(cnf_t* cnf, variable_t var) {
   int_lset_remove(&cnf->converted, var);
 }

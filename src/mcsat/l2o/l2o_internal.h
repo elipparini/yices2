@@ -30,6 +30,7 @@ typedef struct {
   double *val;
 } l2o_search_state_t;
 
+typedef double_hmap_t l2o_evaluator_t;
 
 void l2o_search_state_construct_empty(l2o_search_state_t *state);
 
@@ -46,7 +47,13 @@ bool l2o_term_has_variables(l2o_t *l2o, term_t t, const ivector_t *set_of_vars);
 /**
  * Approximately evaluates term_eval t substituting variables v with double values x. The assignment has to be total.
  */
-double l2o_evaluate_term_approx(l2o_t *l2o, term_t term, const l2o_search_state_t *state);
+double l2o_evaluate_term_approx(l2o_t *l2o, l2o_evaluator_t *evaluator, term_t term);
+
+void l2o_evaluator_construct(l2o_t *l2o, l2o_evaluator_t *evaluator, const l2o_search_state_t *state);
+
+void l2o_evaluator_construct_cache(l2o_t *l2o, l2o_evaluator_t *evaluator, const l2o_search_state_t *state,
+                                   const double_hmap_t *cache);
+
 
 /**
  * Hill climbing algorithm with cost function t (to be minimized), variables v (some of which have fixed values), and starting point x

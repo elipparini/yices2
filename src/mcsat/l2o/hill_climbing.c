@@ -100,6 +100,15 @@ void update_cache(l2o_t *l2o) {
   double_hmap_swap(&l2o->eval_cache, &l2o->eval_map);
 }
 
+static inline
+double l2o_evaluate_term_approx_wrap(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
+  if (l2o->eval_cache.nelems > 0)
+    l2o_evaluator_construct_cache(l2o, &l2o->eval_map, state, &l2o->eval_cache);
+  else
+    l2o_evaluator_construct(l2o, &l2o->eval_map, state);
+  return l2o_evaluate_term_approx(l2o, &l2o->eval_map, t);
+}
+
 static
 bool optimize_bool(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, double *best, uint32_t *eval_runs) {
   const double old_val = state->val[v];
@@ -109,7 +118,7 @@ bool optimize_bool(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, 
 
   // try opposite value
   state->val[v] = old_val == 0.0 ? 1.0 : 0.0;   // try opposite value
-  double new_cost = l2o_evaluate_term_approx(l2o, t, state);
+  double new_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
   (*eval_runs) ++;
 
   bool success = did_improve(best, new_cost);
@@ -159,7 +168,7 @@ bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v
       continue;
     }
 
-    double new_cost = l2o_evaluate_term_approx(l2o, t, state);
+    double new_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
     (*eval_runs) ++;
 
     if (did_improve(best, new_cost)) {
@@ -205,7 +214,7 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
       continue;
     }
 
-    double new_cost = l2o_evaluate_term_approx(l2o, t, state);
+    double new_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
     (*eval_runs) ++;
 
     if (did_improve(best, new_cost)) {
@@ -250,7 +259,7 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   }
 
   // Reset evaluator cache cost (this forces the update of the cache at the next call)
-  double best_cost = l2o_evaluate_term_approx(l2o, t, state);
+  double best_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
   assert(double_hmap_find(&l2o->eval_map, t) != NULL);
   // force cache update
   update_cache(l2o);
