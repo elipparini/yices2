@@ -95,18 +95,22 @@ bool did_improve(double *best, double new) {
   }
 }
 
-static inline
-void update_cache(l2o_t *l2o) {
-  double_hmap_swap(&l2o->eval_cache, &l2o->eval_map);
-}
-
-static inline
-double l2o_evaluate_term_approx_wrap(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
-  if (l2o->eval_cache.nelems > 0)
-    l2o_evaluator_construct_cache(l2o, &l2o->eval_map, state, &l2o->eval_cache);
-  else
-    l2o_evaluator_construct(l2o, &l2o->eval_map, state);
-  return l2o_evaluate_term_approx(l2o, &l2o->eval_map, t);
+static
+bool l2o_evaluate_term_approx_wrap(l2o_t *l2o, term_t t, double *best, l2o_search_state_t *state) {
+  double_hmap_t eval_map;
+  init_double_hmap(&eval_map, 0);
+  if (l2o->eval_cache.nelems > 0) {
+    l2o_evaluator_construct_cache(l2o, &eval_map, state, &l2o->eval_cache);
+  } else {
+    l2o_evaluator_construct(l2o, &eval_map, state);
+  }
+  double new_value = l2o_evaluate_term_approx(l2o, &eval_map, t);
+  bool improve = did_improve(best, new_value);
+  if (improve) {
+    double_hmap_swap(&l2o->eval_cache, &eval_map);
+  }
+  delete_double_hmap(&eval_map);
+  return improve;
 }
 
 static
@@ -118,13 +122,10 @@ bool optimize_bool(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, 
 
   // try opposite value
   state->val[v] = old_val == 0.0 ? 1.0 : 0.0;   // try opposite value
-  double new_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
+  bool success = l2o_evaluate_term_approx_wrap(l2o, t, best, state);
   (*eval_runs) ++;
 
-  bool success = did_improve(best, new_cost);
-  if (success) {
-    update_cache(l2o);
-  } else {
+  if (!success) {
     // restore old value
     state->val[v] = old_val;
   }
@@ -168,11 +169,10 @@ bool optimize_number(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v
       continue;
     }
 
-    double new_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
+    bool improvement = l2o_evaluate_term_approx_wrap(l2o, t, best, state);
     (*eval_runs) ++;
 
-    if (did_improve(best, new_cost)) {
-      update_cache(l2o);
+    if (improvement) {
       success = true;
       best_step = step;
       best_val = *val;
@@ -214,11 +214,10 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
       continue;
     }
 
-    double new_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
+    bool improvement = l2o_evaluate_term_approx_wrap(l2o, t, best, state);
     (*eval_runs) ++;
 
-    if (did_improve(best, new_cost)) {
-      update_cache(l2o);
+    if (improvement) {
       success = true;
       best_val = *val;
     }
@@ -259,10 +258,11 @@ void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   }
 
   // Reset evaluator cache cost (this forces the update of the cache at the next call)
-  double best_cost = l2o_evaluate_term_approx_wrap(l2o, t, state);
-  assert(double_hmap_find(&l2o->eval_map, t) != NULL);
-  // force cache update
-  update_cache(l2o);
+  double best_cost = INFINITY;
+  bool improvement = l2o_evaluate_term_approx_wrap(l2o, t, &best_cost, state);
+  (void)improvement;
+  assert(improvement);
+  assert(best_cost != INFINITY);
 
   uint32_t var_idx = state->n_var_fixed + next_var(&order);
 
