@@ -124,18 +124,17 @@ void l2o_evaluator_update_cache(l2o_evaluator_t *evaluator) {
 void l2o_evaluator_set_state(l2o_evaluator_t *evaluator, const l2o_search_state_t *state) {
   // reset the evaluation
   double_hmap_reset(&evaluator->eval_map);
-
-  // Each var v[i] is evaluated to its assigned value x[i]
-  for (uint32_t i = 0; i < state->n_var; ++i) {
-    evaluator_set(evaluator, state->var[i], state->val[i]);
-  }
+  ivector_reset(&evaluator->modified_vars);
 
   if (evaluator_has_cache(evaluator)) {
     bool diffed = cache_find_changed_variables(&evaluator->eval_cache, state, &evaluator->modified_vars);
     (void) diffed; assert(diffed);
     int_array_sort(evaluator->modified_vars.data, evaluator->modified_vars.size);
-  } else {
-    ivector_reset(&evaluator->modified_vars);
+  }
+
+  // Each var v[i] is evaluated to its assigned value x[i]
+  for (uint32_t i = 0; i < state->n_var; ++i) {
+    evaluator_set(evaluator, state->var[i], state->val[i]);
   }
 
   assert(ensure_cache_values(state, evaluator));
