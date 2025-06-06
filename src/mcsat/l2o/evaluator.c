@@ -87,23 +87,21 @@ bool cache_find_changed_variables(const double_hmap_t *eval_cache, const l2o_sea
 
 #ifndef NDEBUG
 static
-bool ensure_cache_values(const l2o_search_state_t *state, const l2o_evaluator_t *eval_map) {
+bool ensure_cache_values(const l2o_search_state_t *state, const l2o_evaluator_t *evaluator) {
   assert(!l2o_search_state_is_empty(state));
   for (int i = 0; i < state->n_var; ++i) {
-    double_hmap_pair_t *p = double_hmap_find(eval_map, state->var[i]);
+    double_hmap_pair_t *p = double_hmap_find(&evaluator->eval_map, state->var[i]);
     if (!p || p->val != state->val[i]) return false;
   }
   return true;
 }
 #endif
 
-void l2o_evaluator_construct(l2o_t *l2o, l2o_evaluator_t *evaluator, const l2o_search_state_t *state) {
+void l2o_evaluator_construct(l2o_t *l2o, l2o_evaluator_t *evaluator) {
   evaluator->l2o = l2o;
   init_double_hmap(&evaluator->eval_map, 0);
   init_double_hmap(&evaluator->eval_cache, 0);
   init_ivector(&evaluator->modified_vars, 0);
-
-  assert(ensure_cache_values(state, evaluator));
 }
 
 void l2o_evaluator_destruct(l2o_evaluator_t *evaluator) {

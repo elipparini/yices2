@@ -56,7 +56,7 @@ bool l2o_term_has_variables(l2o_t *l2o, term_t t, const ivector_t *set_of_vars);
  */
 double l2o_evaluate_term_approx(l2o_t *l2o, l2o_evaluator_t *evaluator, term_t term);
 
-void l2o_evaluator_construct(l2o_t *l2o, l2o_evaluator_t *evaluator, const l2o_search_state_t *state);
+void l2o_evaluator_construct(l2o_t *l2o, l2o_evaluator_t *evaluator);
 
 void l2o_evaluator_destruct(l2o_evaluator_t *evaluator);
 
