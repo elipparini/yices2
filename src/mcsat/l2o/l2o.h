@@ -66,6 +66,7 @@ typedef struct {
   int_hmap_t l2o_var_map;
 #endif
 
+  // TODO clean this up and only make a varset_members_cache
   /** Table of sets of variables */
   varset_table_t varset_table;
   
