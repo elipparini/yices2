@@ -23,6 +23,8 @@
 
 #include <stdint.h>
 
+typedef struct l2o l2o_t;
+
 typedef struct {
   uint32_t n_var;
   uint32_t n_var_fixed;

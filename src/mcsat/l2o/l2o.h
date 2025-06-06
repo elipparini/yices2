@@ -31,6 +31,8 @@
 #include "mcsat/utils/scope_holder.h"
 #include "mcsat/variable_queue.h"
 
+// TODO for testing only
+#include "mcsat/l2o/l2o_internal.h"
 
 typedef enum {
   L2O,
@@ -38,7 +40,7 @@ typedef enum {
   L2O_FS_JUMP,
 } l2o_mode_t;
 
-typedef struct {
+typedef struct l2o {
   /** The l2o mode */
   l2o_mode_t mode;
 
@@ -77,7 +79,7 @@ typedef struct {
   pmap2_t varset_members_cache;
 
   /** Evaluator cache */
-  double_hmap_t eval_cache;
+  l2o_evaluator_t evaluator;
 
   /** Statistics */
   statistics_t stats;

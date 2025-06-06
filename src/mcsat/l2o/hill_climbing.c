@@ -97,19 +97,12 @@ bool did_improve(double *best, double new) {
 
 static
 bool l2o_evaluate_term_approx_wrap(l2o_t *l2o, term_t t, double *best, l2o_search_state_t *state) {
-  double_hmap_t eval_map;
-  init_double_hmap(&eval_map, 0);
-  if (l2o->eval_cache.nelems > 0) {
-    l2o_evaluator_construct_cache(l2o, &eval_map, state, &l2o->eval_cache);
-  } else {
-    l2o_evaluator_construct(l2o, &eval_map, state);
-  }
-  double new_value = l2o_evaluate_term_approx(l2o, &eval_map, t);
+  l2o_evaluator_set_state(&l2o->evaluator, state);
+  double new_value = l2o_evaluate_term_approx(l2o, &l2o->evaluator, t);
   bool improve = did_improve(best, new_value);
   if (improve) {
-    double_hmap_swap(&l2o->eval_cache, &eval_map);
+    l2o_evaluator_update_cache(&l2o->evaluator);
   }
-  delete_double_hmap(&eval_map);
   return improve;
 }
 
@@ -235,6 +228,9 @@ bool optimize_fs(l2o_t *l2o, term_t t, l2o_search_state_t *state, uint32_t v, do
 void hill_climbing(l2o_t *l2o, term_t t, l2o_search_state_t *state) {
   assert(state->n_var >= 1);
   assert(state->n_var_fixed <= state->n_var);
+
+  // Temp check that we're properly resetting the evaluator before a new call
+  assert(l2o->evaluator.eval_cache.nelems == 0);
 
   if (state->n_var_fixed == state->n_var) {
     return;
