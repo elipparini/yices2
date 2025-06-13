@@ -292,6 +292,7 @@ core_src_c := \
 	utils/int_hash_classes.c \
 	utils/int_hash_map2.c \
 	utils/int_hash_map.c \
+	utils/int_hash_mmap.c \
 	utils/int_hash_sets.c \
 	utils/int_hash_tables.c \
 	utils/int_heap2.c \

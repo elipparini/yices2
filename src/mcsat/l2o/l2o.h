@@ -33,6 +33,7 @@
 
 // TODO for testing only
 #include "mcsat/l2o/l2o_internal.h"
+#include "utils/int_hash_mmap.h"
 
 typedef enum {
   L2O,
@@ -68,15 +69,7 @@ typedef struct l2o {
   int_hmap_t l2o_var_map;
 #endif
 
-  // TODO clean this up and only make a varset_members_cache
-  /** Table of sets of variables */
-  varset_table_t varset_table;
-  
-  /** Map from a term to the table index of the set of its free variables */
-  int_hmap_t freevars_map;
-
-  /** Map from a variable and an index of varset_table to a boolean which is true iff the variable is member of the varset */
-  pmap2_t varset_members_cache;
+  int_hmmap_t var_member;
 
   /** Evaluator cache */
   l2o_evaluator_t evaluator;
