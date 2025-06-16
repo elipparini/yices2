@@ -29,6 +29,8 @@
 //#define EPSILON yices_rational32(1, 1000000)
 #define EPSILON "0.0000001"
 
+#define L2O_SHUFFLE_VARS
+
 static
 void l2o_stats_init(l2o_t* l2o) {
   l2o->l2o_stats.n_runs = statistics_new_int(&l2o->stats, "l2o::runs");
@@ -1350,6 +1352,24 @@ bool l2o_compare_vars_bool(void *data, int32_t a, int32_t b) {
 }
 #endif
 
+#ifdef L2O_SHUFFLE_VARS
+#include "utils/prng.h"
+
+void shuffle(int32_t *array, size_t n) {
+  uint32_t seed = PRNG_DEFAULT_SEED;
+  if (n > 1) {
+    uint32_t i;
+    for (i = 0; i < n - 1; i++) {
+      uint32_t j = i + random_uint32(&seed) / (UINT32_MAX / (n - i) + 1);
+      assert(j < n && i < n);
+      int32_t t = array[j];
+      array[j] = array[i];
+      array[i] = t;
+    }
+  }
+}
+#endif
+
 static
 void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, bool use_cached_values, const var_queue_t *queue, l2o_search_state_t *state) {
   const int_hset_t* var_set = get_freevars(l2o, t);
@@ -1392,6 +1412,10 @@ void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, b
     // prefer boolean variables
     int_array_sort2(vars.data, vars.size, (void *) trail->var_db, l2o_compare_vars_bool);
   }
+#endif
+
+#ifdef L2O_SHUFFLE_VARS
+  shuffle(vars.data, vars.size);
 #endif
 
   // join vectors
