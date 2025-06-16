@@ -1356,7 +1356,7 @@ bool l2o_compare_vars_bool(void *data, int32_t a, int32_t b) {
 #include "utils/prng.h"
 
 void shuffle(int32_t *array, size_t n) {
-  uint32_t seed = PRNG_DEFAULT_SEED;
+  uint32_t seed = 0xDEADBEEF;
   if (n > 1) {
     uint32_t i;
     for (i = 0; i < n - 1; i++) {
