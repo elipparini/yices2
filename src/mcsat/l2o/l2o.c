@@ -1367,6 +1367,7 @@ void l2o_search_state_create(l2o_t *l2o, term_t t, const mcsat_trail_t *trail, b
   ivector_t vars_t;
   init_ivector(&vars_t, 0);
   int_hmmap_find_all(&l2o->var_member, unsigned_term(t), &vars_t);
+  ivector_remove_duplicates(&vars_t);
 
   l2o_search_state_construct_empty(state);
 
