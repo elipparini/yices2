@@ -281,7 +281,7 @@ double l2o_evaluate_term_approx(l2o_t *l2o, term_t term, const l2o_search_state_
 
             for (i = 0; i < n; ++i) {
               term_t arg_i = args[i];
-              term_t arg_i_neg = yices_not(arg_i);
+              term_t arg_i_neg = opposite_term(arg_i);
 
               bool arg_i_neg_already_evaluated = already_evaluated(eval_map, arg_i_neg);
               if (!arg_i_neg_already_evaluated) {
@@ -307,7 +307,7 @@ double l2o_evaluate_term_approx(l2o_t *l2o, term_t term, const l2o_search_state_
               } else {
                 for (i = 0; i < n; ++i) {    // Now we add the non evaluated args to the stack
                   term_t arg_i = args[i];
-                  term_t arg_i_neg = yices_not(arg_i);
+                  term_t arg_i_neg = opposite_term(arg_i);
                   bool arg_i_neg_already_evaluated = already_evaluated(eval_map, arg_i_neg);
                   if (!arg_i_neg_already_evaluated) {
                     ivector_push(&eval_stack, arg_i_neg);
@@ -375,8 +375,8 @@ double l2o_evaluate_term_approx(l2o_t *l2o, term_t term, const l2o_search_state_
             term_t cond = args[0];
             term_t t1 = args[1];
             term_t t2 = args[2];
-            term_t t1neg = yices_not(t1);
-            term_t t2neg = yices_not(t2);
+            term_t t1neg = opposite_term(t1);
+            term_t t2neg = opposite_term(t2);
 
             bool cond_already_evaluated = already_evaluated(eval_map, cond);
 

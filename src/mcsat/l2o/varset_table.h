@@ -26,7 +26,6 @@
 
 #include <stdint.h>
 
-#include "yices.h"
 #include "utils/bitvectors.h"
 #include "utils/indexed_table.h"
 #include "utils/int_hash_tables.h"
