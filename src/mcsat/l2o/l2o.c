@@ -871,6 +871,7 @@ void collect_freevars(l2o_t* l2o, term_t t) {
     {
     case CONSTANT_TERM:
     case ARITH_CONSTANT:
+    case ARITH_FF_CONSTANT:
     case BV64_CONSTANT:
     case BV_CONSTANT:
     case VARIABLE:
@@ -892,13 +893,19 @@ void collect_freevars(l2o_t* l2o, term_t t) {
       break;
     }
     case ARITH_EQ_ATOM:
+    case ARITH_FF_EQ_ATOM:
     case ARITH_GE_ATOM:
     case ARITH_IS_INT_ATOM:
     {
-      term_t current_unsigned = unsigned_term(current);
-      composite_term_t* desc = get_composite(terms, current_kind, current_unsigned);
-      assert(desc->arity == 1);
-      term_t subt = desc->arg[0];
+      term_t subt;
+      if (current_kind == ARITH_FF_EQ_ATOM) {
+        subt = arith_ff_eq_arg(terms, current);
+      } else {
+        term_t current_unsigned = unsigned_term(current);
+        composite_term_t* desc = get_composite(terms, current_kind, current_unsigned);
+        assert(desc->arity == 1);
+        subt = desc->arg[0];
+      }
       if(get_freevars_index(l2o, subt) == -1){
         ivector_push(&stack, subt);
       }
@@ -963,6 +970,7 @@ void collect_freevars(l2o_t* l2o, term_t t) {
     case OR_TERM:
     case XOR_TERM:
     case ARITH_BINEQ_ATOM:
+    case ARITH_FF_BINEQ_ATOM:
     case ARITH_RDIV:
     case ARITH_IDIV:
     case ARITH_MOD:
@@ -1053,9 +1061,12 @@ void collect_freevars(l2o_t* l2o, term_t t) {
       break;
     }
     case ARITH_POLY:
+    case ARITH_FF_POLY:
     {
       bool args_already_visited = true;
-      polynomial_t* polydesc = poly_term_desc(terms, current);
+      polynomial_t* polydesc = current_kind == ARITH_FF_POLY
+        ? finitefield_poly_term_desc(terms, current)
+        : poly_term_desc(terms, current);
       uint32_t n_poly = polydesc->nterms;
 
       int32_t args_varset_index[n_poly];
