@@ -956,7 +956,7 @@ void mcsat_construct(mcsat_solver_t* mcsat, const context_t* ctx) {
   mcsat_add_plugins(mcsat);
 
   // Construct L2O
-  l2o_construct(&mcsat->l2o, L2O, mcsat->terms, mcsat->exception, mcsat->plugins[mcsat->nra_plugin_id].plugin);
+  l2o_construct(&mcsat->l2o, L2O, mcsat->terms, mcsat->exception, mcsat->plugins[mcsat->na_plugin_id].plugin);
 }
 
 void mcsat_destruct(mcsat_solver_t* mcsat) {
@@ -2886,7 +2886,6 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
     }
 
     if (trail_is_at_base_level(mcsat->trail) && (*mcsat->solver_stats.conflicts) > recache_limit) {
-      // printf("\n*mcsat->solver_stats.conflicts: %d", *mcsat->solver_stats.conflicts);
       ++recache_round;
       mcsat_request_recache(mcsat);
       double l = log10(recache_round + 9);
@@ -2933,10 +2932,6 @@ void mcsat_solve(mcsat_solver_t* mcsat, const param_t *params, model_t* mdl, uin
     break;
 
   conflict:
-    //printf("\nn conflicts: %d",*mcsat->solver_stats.conflicts);
-    //if(*mcsat->solver_stats.conflicts > 0 && *mcsat->solver_stats.conflicts % 1000 == 0){
-    //  run_l2o = true;
-    //}
 
     (*mcsat->solver_stats.conflicts)++;
     mcsat_notify_plugins(mcsat, MCSAT_SOLVER_CONFLICT);

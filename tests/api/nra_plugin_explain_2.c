@@ -1,5 +1,5 @@
 /* Achieved the following additional coverage:
- * mcsat/nra/nra_plugin_explain.c: case where
+ * mcsat/na/na_plugin_explain.c: case where
  *          `lp_assignment_get_value(..)->type != LP_VALUE_NONE && sgn == 0
  *          && cmp < 0` in `lp_projection_map_add()`
  * api/yices_api.c: yices_add(term_t, term_t)

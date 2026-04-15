@@ -184,7 +184,7 @@ static void test_mcsat_propagation_check_trace(void) {
   }
 
   /*
-   * Non-linear arithmetic UNSAT instance adapted from nra_plugin_explain.c.
+   * Non-linear arithmetic UNSAT instance adapted from na_plugin_explain.c.
    * This tends to force non-Boolean plugin reasoning/propagation.
    */
   x = yices_new_uninterpreted_term(yices_int_type());
