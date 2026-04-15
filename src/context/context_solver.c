@@ -32,12 +32,19 @@
 #include "context/context.h"
 #include "context/internalization_codes.h"
 #include "model/models.h"
+#include "mcsat/solver.h"
 #include "solvers/bv/dimacs_printer.h"
 #include "solvers/cdcl/delegate.h"
 #include "solvers/funs/fun_solver.h"
 #include "solvers/simplex/simplex.h"
+#include "terms/term_explorer.h"
+#include "terms/term_manager.h"
+#include "terms/term_substitution.h"
+#include "utils/int_hash_map.h"
+#include "utils/int_hash_sets.h"
 
 #include "api/yices_globals.h"
+#include "api/yices_api_lock_free.h"
 #include "mt/thread_macros.h"
 
 
@@ -149,13 +156,13 @@ static void search(smt_core_t *core, uint32_t conflict_bound, uint32_t *reduce_t
   uint32_t r_threshold;
   literal_t l;
 
-  assert(smt_status(core) == STATUS_SEARCHING || smt_status(core) == YICES_STATUS_INTERRUPTED);
+  assert(smt_status(core) == YICES_STATUS_SEARCHING || smt_status(core) == YICES_STATUS_INTERRUPTED);
 
   max_conflicts = num_conflicts(core) + conflict_bound;
   r_threshold = *reduce_threshold;
 
   smt_process(core);
-  while (smt_status(core) == STATUS_SEARCHING && num_conflicts(core) <= max_conflicts) {
+  while (smt_status(core) == YICES_STATUS_SEARCHING && num_conflicts(core) <= max_conflicts) {
     // reduce heuristic
     if (num_learned_clauses(core) >= r_threshold) {
       deletions = core->stats.learned_clauses_deleted;
@@ -203,13 +210,13 @@ static void luby_search(smt_core_t *core, uint32_t conflict_bound, uint32_t *red
   uint32_t r_threshold;
   literal_t l;
 
-  assert(smt_status(core) == STATUS_SEARCHING || smt_status(core) == YICES_STATUS_INTERRUPTED);
+  assert(smt_status(core) == YICES_STATUS_SEARCHING || smt_status(core) == YICES_STATUS_INTERRUPTED);
 
   max_conflicts = num_conflicts(core) + conflict_bound;
   r_threshold = *reduce_threshold;
 
   smt_bounded_process(core, max_conflicts);
-  while (smt_status(core) == STATUS_SEARCHING && num_conflicts(core) < max_conflicts) {
+  while (smt_status(core) == YICES_STATUS_SEARCHING && num_conflicts(core) < max_conflicts) {
     // reduce heuristic
     if (num_learned_clauses(core) >= r_threshold) {
       deletions = core->stats.learned_clauses_deleted;
@@ -262,13 +269,13 @@ static void special_search(smt_core_t *core, uint32_t conflict_bound, uint32_t *
   uint32_t r_threshold;
   literal_t l;
 
-  assert(smt_status(core) == STATUS_SEARCHING || smt_status(core) == YICES_STATUS_INTERRUPTED);
+  assert(smt_status(core) == YICES_STATUS_SEARCHING || smt_status(core) == YICES_STATUS_INTERRUPTED);
 
   max_conflicts = num_conflicts(core) + conflict_bound;
   r_threshold = *reduce_threshold;
 
   smt_process(core);
-  while (smt_status(core) == STATUS_SEARCHING && num_conflicts(core) <= max_conflicts) {
+  while (smt_status(core) == YICES_STATUS_SEARCHING && num_conflicts(core) <= max_conflicts) {
     // reduce heuristic
     if (num_learned_clauses(core) >= r_threshold) {
       deletions = core->stats.learned_clauses_deleted;
@@ -394,7 +401,7 @@ static void solve(smt_core_t *core, const param_t *params, uint32_t n, const lit
   // initialize then do a propagation + simplification step.
   start_search(core, n, a);
   trace_start(core);
-  if (smt_status(core) == STATUS_SEARCHING) {
+  if (smt_status(core) == YICES_STATUS_SEARCHING) {
     // loop
     for (;;) {
       switch (params->branching) {
@@ -422,7 +429,7 @@ static void solve(smt_core_t *core, const param_t *params, uint32_t n, const lit
         break;
       }
 
-      if (smt_status(core) != STATUS_SEARCHING) break;
+      if (smt_status(core) != YICES_STATUS_SEARCHING) break;
 
       smt_restart(core);
       //      smt_partial_restart_var(core);
@@ -575,7 +582,7 @@ smt_status_t check_context(context_t *ctx, const param_t *params) {
 
   core = ctx->core;
   stat = smt_status(core);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     // clean state: the search can proceed
     context_set_search_parameters(ctx, params);
     solve(core, params, 0, NULL);
@@ -594,9 +601,11 @@ smt_status_t check_context_with_assumptions(context_t *ctx, const param_t *param
   smt_core_t *core;
   smt_status_t stat;
 
+  assert(ctx->mcsat == NULL);
+
   core = ctx->core;
   stat = smt_status(core);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     // clean state
     if (params == NULL) {
       params = get_default_params();
@@ -610,6 +619,243 @@ smt_status_t check_context_with_assumptions(context_t *ctx, const param_t *param
 }
 
 /*
+ * Explore term t and collect all Boolean atoms into atoms.
+ */
+static void collect_boolean_atoms(context_t *ctx, term_t t, int_hset_t *atoms, int_hset_t *visited) {
+  term_table_t *terms;
+  uint32_t i, nchildren;
+
+  if (t < 0) {
+    t = not(t);
+  }
+
+  if (int_hset_member(visited, t)) {
+    return;
+  }
+  int_hset_add(visited, t);
+
+  terms = ctx->terms;
+  if (term_type(terms, t) == bool_type(terms->types)) {
+    int_hset_add(atoms, t);
+  }
+
+  if (term_is_projection(terms, t)) {
+    collect_boolean_atoms(ctx, proj_term_arg(terms, t), atoms, visited);
+  } else if (term_is_sum(terms, t)) {
+    nchildren = term_num_children(terms, t);
+    for (i=0; i<nchildren; i++) {
+      term_t child;
+      mpq_t q;
+      mpq_init(q);
+      sum_term_component(terms, t, i, q, &child);
+      collect_boolean_atoms(ctx, child, atoms, visited);
+      mpq_clear(q);
+    }
+  } else if (term_is_bvsum(terms, t)) {
+    uint32_t nbits = term_bitsize(terms, t);
+    int32_t *aux = (int32_t*) safe_malloc(nbits * sizeof(int32_t));
+    nchildren = term_num_children(terms, t);
+    for (i=0; i<nchildren; i++) {
+      term_t child;
+      bvsum_term_component(terms, t, i, aux, &child);
+      collect_boolean_atoms(ctx, child, atoms, visited);
+    }
+    safe_free(aux);
+  } else if (term_is_product(terms, t)) {
+    nchildren = term_num_children(terms, t);
+    for (i=0; i<nchildren; i++) {
+      term_t child;
+      uint32_t exp;
+      product_term_component(terms, t, i, &child, &exp);
+      collect_boolean_atoms(ctx, child, atoms, visited);
+    }
+  } else if (term_is_composite(terms, t)) {
+    nchildren = term_num_children(terms, t);
+    for (i=0; i<nchildren; i++) {
+      collect_boolean_atoms(ctx, term_child(terms, t, i), atoms, visited);
+    }
+  }
+}
+
+/*
+ * Extract assumptions whose labels appear in term t.
+ */
+static void core_from_labeled_interpolant(context_t *ctx, term_t t, const ivector_t *labels, const int_hmap_t *label_map, ivector_t *core) {
+  int_hset_t atoms, visited;
+  uint32_t i;
+
+  init_int_hset(&atoms, 0);
+  init_int_hset(&visited, 0);
+  collect_boolean_atoms(ctx, t, &atoms, &visited);
+
+  ivector_reset(core);
+  for (i=0; i<labels->size; i++) {
+    term_t label = labels->data[i];
+    if (int_hset_member(&atoms, label)) {
+      int_hmap_pair_t *p = int_hmap_find((int_hmap_t *) label_map, label);
+      if (p != NULL) {
+        ivector_push(core, p->val);
+      }
+    }
+  }
+
+  delete_int_hset(&visited);
+  delete_int_hset(&atoms);
+}
+
+/*
+ * Cache a core vector in the context.
+ */
+static void cache_unsat_core(context_t *ctx, const ivector_t *core) {
+  if (ctx->unsat_core_cache == NULL) {
+    ctx->unsat_core_cache = (ivector_t *) safe_malloc(sizeof(ivector_t));
+    init_ivector(ctx->unsat_core_cache, core->size);
+  } else {
+    ivector_reset(ctx->unsat_core_cache);
+  }
+  ivector_copy(ctx->unsat_core_cache, core->data, core->size);
+}
+
+/*
+ * MCSAT variant of check_context_with_term_assumptions.
+ * Caller must hold __yices_globals.lock.
+ */
+static smt_status_t _o_check_context_with_term_assumptions_mcsat(context_t *ctx, const param_t *params, uint32_t n, const term_t *a, int32_t *error) {
+  smt_status_t stat;
+  ivector_t assumptions;
+  uint32_t i;
+
+  /*
+   * MCSAT: create fresh labels b_i, assert (b_i => a_i), then solve with model b_i=true.
+   * We extract interpolant/core before cleanup, then restore sticky UNSAT artifacts.
+   */
+  if (!context_supports_model_interpolation(ctx)) {
+    if (error != NULL) {
+      *error = CTX_OPERATION_NOT_SUPPORTED;
+    }
+    return YICES_STATUS_ERROR;
+  }
+
+  {
+    model_t mdl;               // temporary model: sets all label terms b_i to true
+    int_hmap_t label_map;      // map label b_i -> original assumption a_i
+    ivector_t mapped_core;     // translated core over original assumptions
+    term_t interpolant = NULL_TERM; // raw/substituted interpolant for sticky UNSAT result
+    int32_t code;              // return code from assert_formula (negative on internalization error)
+    bool pushed;               // whether we pushed a temporary scope and must pop it
+    term_manager_t tm;
+
+    init_model(&mdl, ctx->terms, true);
+    init_int_hmap(&label_map, 0);
+    init_ivector(&assumptions, n);
+    init_ivector(&mapped_core, 0);
+    init_term_manager(&tm, ctx->terms);
+    stat = YICES_STATUS_IDLE;
+
+    pushed = false;
+    if (context_supports_pushpop(ctx)) {
+      context_push(ctx);
+      pushed = true;
+    }
+
+    for (i=0; i<n; i++) {
+      term_t b = new_uninterpreted_term(ctx->terms, bool_id);
+      term_t implication = mk_implies(&tm, b, a[i]);
+
+      int_hmap_add(&label_map, b, a[i]);
+      code = _o_assert_formula(ctx, implication);
+      if (code < 0) {
+        if (error != NULL) {
+          *error = code;
+        }
+        stat = YICES_STATUS_ERROR;
+        break;
+      }
+      model_map_term(&mdl, b, vtbl_mk_bool(&mdl.vtbl, true));
+      ivector_push(&assumptions, b);
+    }
+
+    if (stat != YICES_STATUS_ERROR) {
+      stat = check_context_with_model(ctx, params, &mdl, n, assumptions.data);
+      if (stat == YICES_STATUS_UNSAT) {
+        term_subst_t subst;
+
+        interpolant = context_get_unsat_model_interpolant(ctx);
+        assert(interpolant != NULL_TERM);
+        core_from_labeled_interpolant(ctx, interpolant, &assumptions, &label_map, &mapped_core);
+
+        init_term_subst(&subst, &tm, n, assumptions.data, a);
+        interpolant = apply_term_subst(&subst, interpolant);
+        delete_term_subst(&subst);
+      }
+    }
+
+    if (pushed) {
+      mcsat_cleanup_assumptions(ctx->mcsat);
+      context_pop(ctx);
+    }
+    if (stat == YICES_STATUS_UNSAT) {
+      mcsat_set_unsat_result(ctx->mcsat, interpolant);
+      cache_unsat_core(ctx, &mapped_core);
+    }
+
+    delete_term_manager(&tm);
+    delete_ivector(&mapped_core);
+    delete_ivector(&assumptions);
+    delete_int_hmap(&label_map);
+    delete_model(&mdl);
+
+    return stat;
+  }
+}
+
+static smt_status_t check_context_with_term_assumptions_mcsat(context_t *ctx, const param_t *params, uint32_t n, const term_t *a, int32_t *error) {
+  MT_PROTECT(smt_status_t, __yices_globals.lock, _o_check_context_with_term_assumptions_mcsat(ctx, params, n, a, error));
+}
+
+/*
+ * Check under assumptions given as terms.
+ * - if MCSAT is enabled, this uses temporary labels + model interpolation.
+ * - otherwise terms are converted to literals and handled by the CDCL(T) path.
+ *
+ * Preconditions:
+ * - context status must be IDLE.
+ */
+smt_status_t check_context_with_term_assumptions(context_t *ctx, const param_t *params, uint32_t n, const term_t *a, int32_t *error) {
+  if (error != NULL) {
+    *error = CTX_NO_ERROR;
+  }
+
+  context_invalidate_unsat_core_cache(ctx);
+
+  if (ctx->mcsat == NULL) {
+    smt_status_t stat;
+    ivector_t assumptions;
+    uint32_t i;
+    literal_t l;
+
+    init_ivector(&assumptions, n);
+    for (i=0; i<n; i++) {
+      l = context_add_assumption(ctx, a[i]);
+      if (l < 0) {
+        if (error != NULL) {
+          *error = l;
+        }
+        delete_ivector(&assumptions);
+        return YICES_STATUS_ERROR;
+      }
+      ivector_push(&assumptions, l);
+    }
+
+    stat = check_context_with_assumptions(ctx, params, n, assumptions.data);
+    delete_ivector(&assumptions);
+    return stat;
+  }
+
+  return check_context_with_term_assumptions_mcsat(ctx, params, n, a, error);
+}
+
+/*
  * Check with given model
  * - if mcsat status is not IDLE, return the status
  */
@@ -619,7 +865,7 @@ smt_status_t check_context_with_model(context_t *ctx, const param_t *params, mod
   assert(ctx->mcsat != NULL);
 
   stat = mcsat_status(ctx->mcsat);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     mcsat_solve(ctx->mcsat, params, mdl, n, t);
     stat = mcsat_status(ctx->mcsat);
 
@@ -672,17 +918,17 @@ smt_status_t precheck_context(context_t *ctx) {
   core = ctx->core;
 
   stat = smt_status(core);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     start_search(core, 0, NULL);
     smt_process(core);
     stat = smt_status(core);
 
-    assert(stat == STATUS_UNSAT || stat == STATUS_SEARCHING ||
+    assert(stat == YICES_STATUS_UNSAT || stat == YICES_STATUS_SEARCHING ||
 	   stat == YICES_STATUS_INTERRUPTED);
 
-    if (stat == STATUS_SEARCHING) {
+    if (stat == YICES_STATUS_SEARCHING) {
       end_search_unknown(core);
-      stat = STATUS_UNKNOWN;
+      stat = YICES_STATUS_UNKNOWN;
     }
   }
 
@@ -709,17 +955,17 @@ smt_status_t check_with_delegate(context_t *ctx, const char *sat_solver, uint32_
   core = ctx->core;
 
   stat = smt_status(core);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     start_search(core, 0, NULL);
     smt_process(core);
     stat = smt_status(core);
 
-    assert(stat == STATUS_UNSAT || stat == STATUS_SEARCHING ||
+    assert(stat == YICES_STATUS_UNSAT || stat == YICES_STATUS_SEARCHING ||
 	   stat == YICES_STATUS_INTERRUPTED);
 
-    if (stat == STATUS_SEARCHING) {
+    if (stat == YICES_STATUS_SEARCHING) {
       if (smt_easy_sat(core)) {
-	stat = STATUS_SAT;
+	stat = YICES_STATUS_SAT;
       } else {
 	// call the delegate
 	init_delegate(&delegate, sat_solver, num_vars(core));
@@ -727,7 +973,7 @@ smt_status_t check_with_delegate(context_t *ctx, const char *sat_solver, uint32_
 
 	stat = solve_with_delegate(&delegate, core);
 	set_smt_status(core, stat);
-	if (stat == STATUS_SAT) {
+	if (stat == YICES_STATUS_SAT) {
 	  for (x=0; x<num_vars(core); x++) {
 	    v = delegate_get_value(&delegate, x);
 	    set_bvar_value(core, x, v);
@@ -769,15 +1015,15 @@ int32_t bitblast_then_export_to_dimacs(context_t *ctx, const char *filename, smt
 
   code = 0;
   stat = smt_status(core);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     start_search(core, 0, NULL);
     smt_process(core);
     stat = smt_status(core);
 
-    assert(stat == STATUS_UNSAT || stat == STATUS_SEARCHING ||
+    assert(stat == YICES_STATUS_UNSAT || stat == YICES_STATUS_SEARCHING ||
 	   stat == YICES_STATUS_INTERRUPTED);
 
-    if (stat == STATUS_SEARCHING) {
+    if (stat == YICES_STATUS_SEARCHING) {
       code = 1;
       f = fopen(filename, "w");
       if (f == NULL) {
@@ -826,17 +1072,17 @@ int32_t process_then_export_to_dimacs(context_t *ctx, const char *filename, smt_
 
   code = 0;
   stat = smt_status(core);
-  if (stat == STATUS_IDLE) {
+  if (stat == YICES_STATUS_IDLE) {
     start_search(core, 0, NULL);
     smt_process(core);
     stat = smt_status(core);
 
-    assert(stat == STATUS_UNSAT || stat == STATUS_SEARCHING ||
+    assert(stat == YICES_STATUS_UNSAT || stat == YICES_STATUS_SEARCHING ||
 	   stat == YICES_STATUS_INTERRUPTED);
 
-    if (stat == STATUS_SEARCHING) {
+    if (stat == YICES_STATUS_SEARCHING) {
       if (smt_easy_sat(core)) {
-	stat = STATUS_SAT;
+	stat = YICES_STATUS_SAT;
       } else {
 	// call the delegate
 	init_delegate(&delegate, "y2sat", num_vars(core));
@@ -844,12 +1090,12 @@ int32_t process_then_export_to_dimacs(context_t *ctx, const char *filename, smt_
 
 	stat = preprocess_with_delegate(&delegate, core);
 	set_smt_status(core, stat);
-	if (stat == STATUS_SAT) {
+	if (stat == YICES_STATUS_SAT) {
 	  for (x=0; x<num_vars(core); x++) {
 	    v = delegate_get_value(&delegate, x);
 	    set_bvar_value(core, x, v);
 	  }
-	} else if (stat == STATUS_UNKNOWN) {
+	} else if (stat == YICES_STATUS_UNKNOWN) {
 	  code = 1;
 	  f = fopen(filename, "w");
 	  if (f == NULL) {
@@ -1068,7 +1314,7 @@ void build_model(model_t *model, context_t *ctx) {
   uint32_t i, n;
   term_t t;
 
-  assert(smt_status(ctx->core) == STATUS_SAT || smt_status(ctx->core) == STATUS_UNKNOWN || mcsat_status(ctx->mcsat) == STATUS_SAT);
+  assert(smt_status(ctx->core) == YICES_STATUS_SAT || smt_status(ctx->core) == YICES_STATUS_UNKNOWN || mcsat_status(ctx->mcsat) == YICES_STATUS_SAT);
 
   /*
    * First build assignments in the satellite solvers
@@ -1191,15 +1437,32 @@ bval_t context_bool_term_value(context_t *ctx, term_t t) {
 /*
  * Build an unsat core:
  * - store the result in v
- * - if there are no assumptions, return an empty core
+ * - first reuse a cached term core if available.
+ * - otherwise:
+ *   CDCL(T): build from smt_core then cache as terms
+ *   MCSAT: return empty unless check-with-term-assumptions populated the cache.
  */
 void context_build_unsat_core(context_t *ctx, ivector_t *v) {
   smt_core_t *core;
   uint32_t i, n;
   term_t t;
 
+  if (ctx->unsat_core_cache != NULL) {
+    // Fast path: repeated get_unsat_core returns the cached term vector.
+    ivector_reset(v);
+    ivector_copy(v, ctx->unsat_core_cache->data, ctx->unsat_core_cache->size);
+    return;
+  }
+
+  if (ctx->mcsat != NULL) {
+    // MCSAT core extraction is done in check-with-term-assumptions; without cache
+    // there is no generic context-level core structure to rebuild from here.
+    ivector_reset(v);
+    return;
+  }
+
   core = ctx->core;
-  assert(core != NULL && core->status == STATUS_UNSAT);
+  assert(core != NULL && core->status == YICES_STATUS_UNSAT);
   build_unsat_core(core, v);
 
   // convert from literals to terms
@@ -1209,6 +1472,9 @@ void context_build_unsat_core(context_t *ctx, ivector_t *v) {
     assert(t >= 0);
     v->data[i] = t;
   }
+
+  // Cache the converted term core for subsequent queries.
+  cache_unsat_core(ctx, v);
 }
 
 
@@ -1219,4 +1485,3 @@ term_t context_get_unsat_model_interpolant(context_t *ctx) {
   assert(ctx->mcsat != NULL);
   return mcsat_get_unsat_model_interpolant(ctx->mcsat);
 }
-
