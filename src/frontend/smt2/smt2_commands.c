@@ -6528,6 +6528,11 @@ void smt2_set_logic(const char *name) {
 
 
 
+  // if logic is QF_NIA, enable l2o
+  if (code == QF_NIA && !__smt2_globals.mcsat_options.l2o) {
+    __smt2_globals.mcsat_options.l2o = true;
+  }
+
   smt2_lexer_activate_logic(code);
   __smt2_globals.logic_code = code;
   __smt2_globals.logic_name = clone_string(name);
