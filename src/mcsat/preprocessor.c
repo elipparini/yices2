@@ -85,6 +85,225 @@ void preprocessor_set(preprocessor_t* pre, term_t t, term_t t_pre) {
   ivector_push(&pre->preprocess_map_list, t);
 }
 
+typedef struct composite_term1_s {
+  uint32_t arity;  // number of subterms
+  term_t arg[1];  // real size = arity
+} composite_term1_t;
+
+static
+composite_term1_t composite_for_noncomposite;
+
+static
+composite_term_t* get_composite(term_table_t* terms, term_kind_t kind, term_t t) {
+  assert(term_is_composite(terms, t));
+  assert(term_kind(terms, t) == kind);
+  assert(is_pos_term(t));
+
+  switch (kind) {
+  case ITE_TERM:           // if-then-else
+  case ITE_SPECIAL:        // special if-then-else term (NEW: EXPERIMENTAL)
+    return ite_term_desc(terms, t);
+  case EQ_TERM:            // equality
+    return eq_term_desc(terms, t);
+  case OR_TERM:            // n-ary OR
+    return or_term_desc(terms, t);
+  case XOR_TERM:           // n-ary XOR
+    return xor_term_desc(terms, t);
+  case ARITH_BINEQ_ATOM:   // equality: (t1 == t2)  (between two arithmetic terms)
+    return arith_bineq_atom_desc(terms, t);
+  case ARITH_EQ_ATOM: {
+    composite_for_noncomposite.arity = 1;
+    composite_for_noncomposite.arg[0] = arith_eq_arg(terms, t);
+    return (composite_term_t*)&composite_for_noncomposite;
+  }
+  case ARITH_GE_ATOM: {
+    composite_for_noncomposite.arity = 1;
+    composite_for_noncomposite.arg[0] = arith_ge_arg(terms, t);
+    return (composite_term_t*)&composite_for_noncomposite;
+  }
+  case ARITH_FF_BINEQ_ATOM:
+    return arith_ff_bineq_atom_desc(terms, t);
+  case ARITH_FF_EQ_ATOM: {
+    composite_for_noncomposite.arity = 1;
+    composite_for_noncomposite.arg[0] = arith_ff_eq_arg(terms, t);
+    return (composite_term_t*)&composite_for_noncomposite;
+  }
+  case APP_TERM:           // application of an uninterpreted function
+    return app_term_desc(terms, t);
+  case ARITH_RDIV:          // division: (/ x y)
+    return arith_rdiv_term_desc(terms, t);
+  case ARITH_IDIV:          // division: (div x y) as defined in SMT-LIB 2
+    return arith_idiv_term_desc(terms, t);
+  case ARITH_MOD:          // remainder: (mod x y) is y - x * (div x y)
+    return arith_mod_term_desc(terms, t);
+  case UPDATE_TERM:
+    return update_term_desc(terms, t);
+  case DISTINCT_TERM:
+    return distinct_term_desc(terms, t);
+  case BV_ARRAY:
+    return bvarray_term_desc(terms, t);
+  case BV_DIV:
+    return bvdiv_term_desc(terms, t);
+  case BV_REM:
+    return bvrem_term_desc(terms, t);
+  case BV_SDIV:
+    return bvsdiv_term_desc(terms, t);
+  case BV_SREM:
+    return bvsrem_term_desc(terms, t);
+  case BV_SMOD:
+    return bvsmod_term_desc(terms, t);
+  case BV_SHL:
+    return bvshl_term_desc(terms, t);
+  case BV_LSHR:
+    return bvlshr_term_desc(terms, t);
+  case BV_ASHR:
+    return bvashr_term_desc(terms, t);
+  case BV_EQ_ATOM:
+    return bveq_atom_desc(terms, t);
+  case BV_GE_ATOM:
+    return bvge_atom_desc(terms, t);
+  case BV_SGE_ATOM:
+    return bvsge_atom_desc(terms, t);
+  default:
+    assert(false);
+    return NULL;
+  }
+}
+
+static bool type_needs_function_diseq_guard(type_table_t* types, type_t tau) {
+  uint32_t i, n;
+
+  switch (type_kind(types, tau)) {
+  case FUNCTION_TYPE:
+    if (type_has_finite_domain(types, tau) ||
+        is_unit_type(types, function_type_range(types, tau))) {
+      return true;
+    }
+
+    n = function_type_arity(types, tau);
+    for (i = 0; i < n; ++ i) {
+      if (type_needs_function_diseq_guard(types, function_type_domain(types, tau, i))) {
+        return true;
+      }
+    }
+
+    return type_needs_function_diseq_guard(types, function_type_range(types, tau));
+
+  case TUPLE_TYPE:
+    n = tuple_type_arity(types, tau);
+    for (i = 0; i < n; ++ i) {
+      if (type_needs_function_diseq_guard(types, tuple_type_component(types, tau, i))) {
+        return true;
+      }
+    }
+    return false;
+
+  case INSTANCE_TYPE:
+    n = instance_type_arity(types, tau);
+    for (i = 0; i < n; ++ i) {
+      if (type_needs_function_diseq_guard(types, instance_type_param(types, tau, i))) {
+        return true;
+      }
+    }
+    return false;
+
+  default:
+    return false;
+  }
+}
+
+static bool term_needs_function_diseq_guard(term_table_t* terms, term_t t) {
+  return type_needs_function_diseq_guard(terms->types, term_type(terms, t));
+}
+
+static
+term_t mk_composite(preprocessor_t* pre, term_kind_t kind, uint32_t n, term_t* children) {
+  term_manager_t* tm = &pre->tm;
+  term_table_t* terms = pre->terms;
+
+  switch (kind) {
+  case ITE_TERM:           // if-then-else
+  case ITE_SPECIAL:        // special if-then-else term (NEW: EXPERIMENTAL)
+  {
+    assert(n == 3);
+    term_t type = super_type(pre->terms->types, term_type(terms, children[1]), term_type(terms, children[2]));
+    assert(type != NULL_TYPE);
+    return mk_ite(tm, children[0], children[1], children[2], type);
+  }
+  case EQ_TERM:            // equality
+    assert(n == 2);
+    return mk_eq(tm, children[0], children[1]);
+  case OR_TERM:            // n-ary OR
+    assert(n > 1);
+    return mk_or(tm, n, children);
+  case XOR_TERM:           // n-ary XOR
+    return mk_xor(tm, n, children);
+  case ARITH_EQ_ATOM:
+    assert(n == 1);
+    return mk_arith_eq(tm, children[0], zero_term);
+  case ARITH_GE_ATOM:
+    assert(n == 1);
+    return mk_arith_geq(tm, children[0], zero_term);
+  case ARITH_BINEQ_ATOM:   // equality: (t1 == t2)  (between two arithmetic terms)
+    assert(n == 2);
+    return mk_arith_eq(tm, children[0], children[1]);
+  case APP_TERM:           // application of an uninterpreted function
+    assert(n > 1);
+    return mk_application(tm, children[0], n-1, children + 1);
+  case ARITH_RDIV:
+    assert(n == 2);
+    return mk_arith_rdiv(tm, children[0], children[1]);
+  case ARITH_IDIV:          // division: (div x y) as defined in SMT-LIB 2
+    assert(n == 2);
+    return mk_arith_idiv(tm, children[0], children[1]);
+  case ARITH_MOD:          // remainder: (mod x y) is y - x * (div x y)
+    assert(n == 2);
+    return mk_arith_mod(tm, children[0], children[1]);
+  case UPDATE_TERM:
+    assert(n > 2);
+    return mk_update(tm, children[0], n-2, children + 1, children[n-1]);
+  case BV_ARRAY:
+    assert(n >= 1);
+    return mk_bvarray(tm, n, children);
+  case BV_DIV:
+    assert(n == 2);
+    return mk_bvdiv(tm, children[0], children[1]);
+  case BV_REM:
+    assert(n == 2);
+    return mk_bvrem(tm, children[0], children[1]);
+  case BV_SDIV:
+    assert(n == 2);
+    return mk_bvsdiv(tm, children[0], children[1]);
+  case BV_SREM:
+    assert(n == 2);
+    return mk_bvsrem(tm, children[0], children[1]);
+  case BV_SMOD:
+    assert(n == 2);
+    return mk_bvsmod(tm, children[0], children[1]);
+  case BV_SHL:
+    assert(n == 2);
+    return mk_bvshl(tm, children[0], children[1]);
+  case BV_LSHR:
+    assert(n == 2);
+    return mk_bvlshr(tm, children[0], children[1]);
+  case BV_ASHR:
+    assert(n == 2);
+    return mk_bvashr(tm, children[0], children[1]);
+  case BV_EQ_ATOM:
+    assert(n == 2);
+    return mk_bveq(tm, children[0], children[1]);
+  case BV_GE_ATOM:
+    assert(n == 2);
+    return mk_bvge(tm, children[0], children[1]);
+  case BV_SGE_ATOM:
+    assert(n == 2);
+    return mk_bvsge(tm, children[0], children[1]);
+  default:
+    assert(false);
+    return NULL_TERM;
+  }
+}
+
 /**
  * Returns purified version of t if we should purify t as an argument of a function.
  * Any new equalities are added to output.
@@ -331,13 +550,13 @@ term_t preprocessor_apply(preprocessor_t* pre, term_t t, ivector_t* out, bool is
 
       n = desc->arity;
 
-      /*
-      // Arrays not supported yet
-      if (current_kind == EQ_TERM && term_type_kind(terms, desc->arg[0]) == FUNCTION_TYPE) {
+      // MCSAT does not yet enforce all extensionality/cardinality constraints
+      // for function-sort disequalities. Reject equality atoms whose type needs
+      // that monitoring; the Boolean abstraction may assert them either way.
+      if (current_kind == EQ_TERM && term_needs_function_diseq_guard(terms, desc->arg[0])) {
         longjmp(*pre->exception, MCSAT_EXCEPTION_UNSUPPORTED_THEORY);
       }
-      */
- 
+
       // Is this a top-level equality assertion
       bool is_equality =
           current_kind == EQ_TERM ||
@@ -931,6 +1150,14 @@ term_t preprocessor_apply(preprocessor_t* pre, term_t t, ivector_t* out, bool is
       bool children_done = true;
       n = desc->arity;
 
+      // DISTINCT_TERM is lowered below into pairwise disequalities. Apply the
+      // same function-sort guard before that expansion.
+      for (i = 0; i < n; ++ i) {
+        if (term_needs_function_diseq_guard(terms, desc->arg[i])) {
+          longjmp(*pre->exception, MCSAT_EXCEPTION_UNSUPPORTED_THEORY);
+        }
+      }
+
       ivector_t children;
       init_ivector(&children, n);
 
@@ -966,6 +1193,10 @@ term_t preprocessor_apply(preprocessor_t* pre, term_t t, ivector_t* out, bool is
 
       break;
     }
+
+    case LAMBDA_TERM:
+      longjmp(*pre->exception, LAMBDAS_NOT_SUPPORTED);
+      break;
 
     default:
       // UNSUPPORTED TERM/THEORY
@@ -1108,4 +1339,3 @@ void preprocessor_gc_mark(preprocessor_t* pre) {
     preprocessor_gc_mark_term(pre, t_pure);
   }
 }
-
