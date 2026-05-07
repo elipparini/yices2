@@ -3837,6 +3837,7 @@ static
 composite_term1_t composite_for_noncomposite;
 
 composite_term_t* get_composite(term_table_t* terms, term_kind_t kind, term_t t) {
+  assert(term_is_composite(terms, t));
   assert(term_kind(terms, t) == kind);
   assert(is_pos_term(t));
 

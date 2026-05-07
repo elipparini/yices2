@@ -1767,6 +1767,9 @@ static inline special_term_t *ite_special_desc(const term_table_t *table, term_t
 }
 
 
+
+
+
 /*
  * GARBAGE COLLECTION
  */
