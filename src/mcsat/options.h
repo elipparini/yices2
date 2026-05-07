@@ -31,6 +31,7 @@ typedef struct mcsat_options_s {
   bool na_mgcd;
   bool na_nlsat;
   bool na_bound;
+  bool l2o;
   int32_t na_bound_min;
   int32_t na_bound_max;
   int32_t bv_var_size;

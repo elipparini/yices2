@@ -68,6 +68,8 @@ void na_plugin_stats_init(na_plugin_t* na) {
   na->stats.evaluations = statistics_new_int(na->ctx->stats, "mcsat::na::evaluations");
   na->stats.constraint_regular = statistics_new_int(na->ctx->stats, "mcsat::na::constraints_regular");
   na->stats.constraint_root = statistics_new_int(na->ctx->stats, "mcsat::na::constraints_root");
+  na->stats.value_cache_usage = statistics_new_avg(na->ctx->stats, "mcsat::na::value_cache_usage");
+  na->stats.value_cache_feasibility = statistics_new_avg(na->ctx->stats, "mcsat::na::value_cache_feasibility");
 }
 
 static
@@ -1119,6 +1121,9 @@ void na_plugin_decide(plugin_t* plugin, variable_t x, trail_token_t* decide_toke
       using_cached = true;
     }
   }
+  // measure the number of cache uses
+  statistic_avg_add(na->stats.value_cache_feasibility, using_cached ? 1 : 0);
+  statistic_avg_add(na->stats.value_cache_usage, x_cached_value != NULL ? 1 : 0);
 
   // If the set is 0, we can pick any value, including 0
   if (!using_cached && feasible != NULL) {
@@ -1850,7 +1855,7 @@ void na_plugin_pop(plugin_t* plugin) {
 static
 void na_plugin_gc_mark(plugin_t* plugin, gc_info_t* gc_vars) {
   na_plugin_t* na = (na_plugin_t*) plugin;
-  // The NRA plugin doesn't really need to keep much. The only things we'd
+  // The NA plugin doesn't really need to keep much. The only things we'd
   // like to keep are the lemmas that restrict top level feasibility sets.
   feasible_set_db_gc_mark(na->feasible_set_db, gc_vars);
   // We also need to mark all the real variables that are in use
@@ -2198,4 +2203,14 @@ plugin_t* na_plugin_allocator(void) {
   plugin->plugin_interface.set_exception_handler = na_plugin_set_exception_handler;
 
   return (plugin_t*) plugin;
+}
+
+const lp_feasibility_set_t* get_fs_by_term(plugin_t *plugin, term_t v) {
+  na_plugin_t *na = (na_plugin_t*)plugin;
+  if (!variable_db_has_variable(na->ctx->var_db, v)) {
+    return NULL;
+  }
+  variable_t var = variable_db_get_variable(na->ctx->var_db, v);
+  assert(var != variable_null);
+  return feasible_set_db_get(na->feasible_set_db, var);
 }

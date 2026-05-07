@@ -1,0 +1,8 @@
+(set-logic QF_NIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(declare-fun z () Int)
+(declare-fun w () Int)
+(assert (not (= (+ (* z z) (* w w)) 1)))
+(assert (> (+ (* (- x z) (- x z)) (* (- y w) (- y w))) 1))
+(check-sat)

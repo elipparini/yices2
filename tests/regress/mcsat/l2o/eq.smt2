@@ -1,0 +1,7 @@
+(set-logic QF_NIA)
+(declare-fun x () Int)
+(declare-fun y () Int)
+(declare-fun z () Int)
+(declare-fun w () Int)
+(assert (= (+ (* z z) (* w w)) 11))
+(check-sat)

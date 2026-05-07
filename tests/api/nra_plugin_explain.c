@@ -1,5 +1,5 @@
 /* Achieves the following additional coverage:
- * mcsat/nra/nra_plugin_explain.c:310-311
+ * mcsat/na/na_plugin_explain.c:310-311
  * api/yices_api.c: yices_error_code()
  *          check_square_degree()
  *          check_power_degree()

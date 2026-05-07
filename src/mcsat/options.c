@@ -24,6 +24,7 @@ extern void init_mcsat_options(mcsat_options_t *opts) {
   opts->na_nlsat = false;
   opts->na_mgcd = false;
   opts->na_bound = false;
+  opts->l2o = false;
   opts->na_bound_min = -1;
   opts->na_bound_max = -1;
   opts->bv_var_size = -1;
